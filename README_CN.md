@@ -1,13 +1,13 @@
 <div align="center">
 <p align="center">
-  <img src="assets/omniagent-logo.png" alt="OmniAgent" width="150">
+  <img src="assets/omniagent-logo.png" alt="OmniAgent" width="200">
 </p>
 
 # OmniAgent
 让Agent的智能随着交互持续进化，让安全动态加固。
 
 <p align="center">
-  <a href="https://YeQing172026.github.io/omniagent/">Website</a>&nbsp; • &nbsp;
+  <a href="https://yeqing17-2026.github.io/OmniAgent/">Website</a>&nbsp; • &nbsp;
   <a href="https://docs.omniagent.dev">Docs (on the way)</a>&nbsp; • &nbsp;
   <a href="README_CN.md">中文</a>&nbsp; • &nbsp;
   <a href="README.md">English</a>&nbsp; 
