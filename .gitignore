@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OmniAgent runtime data
+.omniagent/
+*.db
+*.db-journal
+
+# Secrets and credentials
+.env
+.env.*
+*.pem
+*.key
+*credential*
+*secret*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Development artifacts (pre-release)
+docs/
+demo_workspace/
+questions/
+memory/
+
+# Root-level bootstrap files (canonical copies live in .omniagent/)
+AGENTS.md
+SOUL.md
+CUSTOM.md
+
+# Development session config
+CLAUDE.md
+MEMORY.md
+
+# Dev artifacts
+test-project/
+clean_test_project*.sh

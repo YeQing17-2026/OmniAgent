@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniAgent - Your Self-Evolving AI Agent</title>
+    <meta name="description" content="OmniAgent is an open-source AI Agent framework. OmniEvolve grows stronger, HyperHarness executes safer, Deep Reflexion learns from every mistake.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="OmniAgent - Your Self-Evolving AI Agent">
+    <meta property="og:description" content="OmniAgent: An agent whose intelligence evolves with every interaction, and whose safety hardens dynamically. Full-dimensional self-evolution across Skill, Context, and BrainModel.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="keywords" content="OmniAgent, AI agent framework, self-evolving agent, OmniEvolve, Hyper Harness, Deep Reflexion, Python, reflexion agent, multi-agent, LLM, open source">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --navy-900: #0a0f1e;
+            --navy-800: #111827;
+            --slate-800: #1e293b;
+            --slate-700: #334155;
+            --slate-600: #475569;
+            --slate-500: #64748b;
+            --slate-400: #94a3b8;
+            --slate-300: #cbd5e1;
+            --white: #f8fafc;
+            --teal-400: #2dd4bf;
+            --teal-500: #14b8a6;
+            --teal-600: #0d9488;
+            --emerald-400: #34d399;
+            --purple-400: #a78bfa;
+            --amber-400: #fbbf24;
+            --blue-400: #60a5fa;
+            --green-400: #4ade80;
+            --red-400: #f87171;
+            --cyan-400: #22d3ee;
+            --rose-400: #fb7185;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--navy-900);
+            color: var(--slate-400);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+        a { color: inherit; text-decoration: none; }
+        code { font-family: 'JetBrains Mono', monospace; }
+
+        /* Layout */
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+        .container-narrow { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+        /* Language toggle */
+        .lang-toggle {
+            display: inline-flex; border: 1px solid var(--slate-700); border-radius: 8px;
+            overflow: hidden; font-size: 0.8125rem;
+        }
+        .lang-toggle button {
+            background: transparent; border: none; color: var(--slate-500); cursor: pointer;
+            padding: 6px 12px; font-size: 0.8125rem; font-weight: 500;
+            font-family: inherit; transition: all 0.2s;
+        }
+        .lang-toggle button.active {
+            background: var(--teal-400); color: var(--navy-900); font-weight: 600;
+        }
+        .lang-toggle button:not(.active):hover { color: var(--slate-300); }
+
+        /* Bilingual: show/hide */
+        [data-lang="cn"] { display: none; }
+        body.lang-cn [data-lang="en"] { display: none; }
+        body.lang-cn [data-lang="cn"] { display: initial; }
+
+        /* Nav */
+        .nav {
+            position: fixed; top: 0; z-index: 50; width: 100%;
+            border-bottom: 1px solid rgba(30, 41, 59, 0.8);
+            background: rgba(10, 15, 30, 0.85);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        }
+        .nav-inner {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 24px; max-width: 1200px; margin: 0 auto;
+        }
+        .nav-logo {
+            font-size: 1.5rem; font-weight: 800; color: var(--white);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .nav-logo span { color: var(--teal-400); }
+        .nav-center { display: flex; gap: 32px; }
+        .nav-center a { font-size: 0.875rem; color: var(--slate-400); transition: color 0.2s; }
+        .nav-center a:hover { color: var(--teal-400); }
+        .nav-right { display: flex; align-items: center; gap: 16px; }
+
+        .btn-primary {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--teal-400); color: var(--navy-900);
+            padding: 10px 24px; border-radius: 8px; font-weight: 600;
+            font-size: 0.875rem; transition: all 0.2s; border: none; cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-primary:hover { background: var(--teal-500); transform: translateY(-1px); }
+        .btn-secondary {
+            display: inline-flex; align-items: center; gap: 8px;
+            border: 1px solid var(--slate-700); color: var(--slate-300);
+            padding: 10px 24px; border-radius: 8px; font-weight: 500;
+            font-size: 0.875rem; transition: all 0.2s; cursor: pointer;
+            background: transparent; font-family: inherit;
+        }
+        .btn-secondary:hover { border-color: var(--teal-400); color: var(--teal-400); }
+
+        /* Hero */
+        .hero {
+            position: relative; overflow: hidden;
+            padding: 192px 0 128px; text-align: center;
+        }
+        .hero-glow {
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 800px; height: 600px; border-radius: 50%;
+            background: radial-gradient(ellipse, rgba(45, 212, 191, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .hero h1 {
+            font-size: 4rem; font-weight: 800; letter-spacing: -0.02em;
+            color: var(--white); position: relative;
+        }
+        .hero h1 .accent { color: var(--teal-400); }
+        .hero .subtitle {
+            margin-top: 24px; font-size: 1.5rem; font-weight: 500;
+            color: var(--slate-300); max-width: 640px;
+            margin-left: auto; margin-right: auto; line-height: 1.5;
+        }
+        .hero .desc {
+            margin-top: 16px; font-size: 1.125rem; color: var(--slate-500);
+            max-width: 560px; margin-left: auto; margin-right: auto;
+        }
+        .hero-buttons {
+            margin-top: 40px; display: flex; gap: 16px;
+            justify-content: center; flex-wrap: wrap;
+        }
+        .hero-tags {
+            margin-top: 32px; display: flex; gap: 12px;
+            justify-content: center; flex-wrap: wrap;
+        }
+        .hero-tag {
+            display: inline-flex; align-items: center; gap: 6px;
+            border: 1px solid var(--slate-700); border-radius: 999px;
+            padding: 6px 16px; font-size: 0.8125rem; color: var(--slate-300);
+            background: var(--navy-800);
+        }
+
+        /* Section title */
+        .section-title { text-align: center; margin-bottom: 56px; }
+        .section-title h2 {
+            font-size: 2rem; font-weight: 700; color: var(--white);
+        }
+        .section-title p {
+            margin-top: 12px; font-size: 1.0625rem; color: var(--slate-500);
+            max-width: 560px; margin-left: auto; margin-right: auto;
+        }
+
+        /* Use Cases */
+        .usecases-section { padding: 96px 0; }
+        .usecase-grid {
+            display: grid; gap: 24px;
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .usecase-card {
+            border: 1px solid var(--slate-700); border-radius: 16px;
+            background: var(--navy-900); padding: 32px;
+            transition: all 0.3s;
+        }
+        .usecase-card:hover { border-color: rgba(45, 212, 191, 0.3); transform: translateY(-2px); }
+        .usecase-icon { font-size: 2.5rem; margin-bottom: 20px; }
+        .usecase-card h3 { font-size: 1.25rem; font-weight: 700; color: var(--white); margin-bottom: 8px; }
+        .usecase-card .usecase-subtitle {
+            font-size: 0.9375rem; color: var(--teal-400); font-style: italic; margin-bottom: 12px;
+        }
+        .usecase-card p { font-size: 0.9375rem; line-height: 1.7; color: var(--slate-400); }
+
+        /* Comparison */
+        .comparison-section { padding: 96px 0; background: rgba(17, 24, 39, 0.3); }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            padding: 14px 16px; text-align: left; font-size: 0.875rem;
+            font-weight: 500; color: var(--slate-500);
+        }
+        thead th.teal { color: var(--teal-400); font-weight: 600; }
+        tbody td { padding: 14px 16px; font-size: 0.875rem; }
+        tbody td.label { font-weight: 500; color: var(--slate-300); }
+        tbody td.teal { color: var(--teal-400); }
+        tbody td.muted { color: var(--slate-500); }
+        tbody tr { border-top: 1px solid var(--slate-800); }
+        tbody tr.alt { background: rgba(17, 24, 39, 0.3); }
+
+        /* Features Deep Dive */
+        .features-section { padding: 96px 0; }
+        .feature-grid {
+            display: grid; gap: 32px;
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .feature-card {
+            border: 1px solid var(--slate-700); border-radius: 16px;
+            background: var(--navy-900); padding: 36px;
+            transition: all 0.3s;
+        }
+        .feature-card:hover { border-color: rgba(45, 212, 191, 0.3); }
+        .feature-card .feature-icon { font-size: 2.5rem; margin-bottom: 20px; }
+        .feature-card h3 {
+            font-size: 1.375rem; font-weight: 700; color: var(--white);
+            display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+        }
+        .feature-card .feature-motto {
+            font-size: 0.9375rem; color: var(--teal-400); font-style: italic; margin-bottom: 20px;
+        }
+        .feature-card ul { padding-left: 0; list-style: none; }
+        .feature-card ul li {
+            position: relative; padding-left: 20px;
+            font-size: 0.9375rem; line-height: 1.8; color: var(--slate-400);
+            margin-bottom: 4px;
+        }
+        .feature-card ul li::before {
+            content: ''; position: absolute; left: 0; top: 12px;
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--teal-400);
+        }
+        .feature-card ul li strong { color: var(--slate-300); }
+
+        /* Quick Start */
+        .quickstart-section { padding: 96px 0; background: rgba(17, 24, 39, 0.3); }
+        .quickstart-wrapper { max-width: 640px; margin: 0 auto; }
+        .code-block {
+            border: 1px solid var(--slate-700); border-radius: 12px;
+            background: var(--navy-800); padding: 24px; margin-top: 48px;
+            overflow-x: auto;
+        }
+        .code-header {
+            display: flex; align-items: center; gap: 8px;
+            padding-bottom: 12px; margin-bottom: 16px;
+            border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+        }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot.red { background: rgba(248, 113, 113, 0.7); }
+        .dot.yellow { background: rgba(251, 191, 36, 0.7); }
+        .dot.green { background: rgba(74, 222, 128, 0.7); }
+        .code-header span { margin-left: 8px; font-size: 0.75rem; color: var(--slate-500); }
+        .code-block code {
+            display: block; white-space: pre; font-size: 0.875rem;
+            line-height: 2; color: var(--slate-300);
+        }
+        .code-block .prompt { color: var(--slate-500); }
+        .code-block .cmd { color: var(--teal-400); }
+        .code-block .arg { color: var(--slate-300); }
+        .code-block .comment { color: var(--slate-600); }
+        .tip-box {
+            margin-top: 24px; padding: 16px;
+            border: 1px solid rgba(45, 212, 191, 0.2);
+            border-radius: 8px; background: rgba(45, 212, 191, 0.05);
+        }
+        .tip-box p { font-size: 0.875rem; color: var(--teal-400); }
+        .tip-box code {
+            background: rgba(45, 212, 191, 0.1); padding: 2px 8px;
+            border-radius: 4px; font-size: 0.8125rem; color: var(--teal-400);
+        }
+        .requirements {
+            margin-top: 32px; display: flex; flex-wrap: wrap; gap: 12px;
+            justify-content: center;
+        }
+        .req-tag {
+            border: 1px solid var(--slate-700); border-radius: 999px;
+            padding: 8px 16px; font-size: 0.875rem; color: var(--slate-300);
+            background: var(--navy-800);
+        }
+
+        /* FAQ */
+        .faq-section { padding: 96px 0; }
+        .faq-list { max-width: 720px; margin: 0 auto; }
+        .faq-item {
+            border: 1px solid var(--slate-700); border-radius: 12px;
+            background: var(--navy-800); margin-bottom: 16px;
+            overflow: hidden; transition: border-color 0.2s;
+        }
+        .faq-item:hover { border-color: var(--slate-600); }
+        .faq-question {
+            padding: 20px 24px; cursor: pointer; display: flex;
+            justify-content: space-between; align-items: center;
+            list-style: none; user-select: none;
+        }
+        .faq-question h3 { font-weight: 600; color: var(--white); padding-right: 16px; }
+        .faq-chevron { color: var(--slate-500); transition: transform 0.2s; flex-shrink: 0; }
+        .faq-item[open] .faq-chevron { transform: rotate(180deg); }
+        .faq-answer { padding: 0 24px 20px; font-size: 0.875rem; line-height: 1.7; }
+
+        /* Footer */
+        .footer {
+            border-top: 1px solid var(--slate-800); padding: 48px 24px;
+        }
+        .footer-inner {
+            max-width: 1200px; margin: 0 auto;
+            display: flex; flex-wrap: wrap; justify-content: space-between;
+            align-items: center; gap: 24px;
+        }
+        .footer-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .footer-logo { font-size: 1.25rem; font-weight: 800; color: var(--white); }
+        .footer-logo span { color: var(--teal-400); }
+        .footer-divider { color: var(--slate-700); }
+        .footer-link { font-size: 0.875rem; color: var(--slate-500); transition: color 0.2s; }
+        .footer-link:hover { color: var(--teal-400); }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(24px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeInUp 0.6s ease-out forwards; }
+        .fade-in-d1 { animation-delay: 0.1s; opacity: 0; }
+        .fade-in-d2 { animation-delay: 0.2s; opacity: 0; }
+        .fade-in-d3 { animation-delay: 0.3s; opacity: 0; }
+        .fade-in-d4 { animation-delay: 0.4s; opacity: 0; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-center { display: none; }
+            .hero h1 { font-size: 2.5rem; }
+            .hero .subtitle { font-size: 1.125rem; }
+            .hero { padding: 140px 0 80px; }
+            .usecase-grid { grid-template-columns: 1fr; }
+            .feature-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 1024px) {
+            .feature-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--navy-900); }
+        ::-webkit-scrollbar-thumb { background: var(--slate-700); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- ===== Navigation ===== -->
+<nav class="nav">
+    <div class="nav-inner">
+        <a href="/" class="nav-logo">
+            <img src="assets/omniagent-logo.png" alt="OmniAgent" width="28" height="28">
+            OmniAgent</span>
+        </a>
+        <div class="nav-center">
+            <a href="#usecases">Use Cases</a>
+            <a href="#features">Features</a>
+            <a href="#quickstart">Quick Start</a>
+            <a href="#news">News</a>
+            <a href="https://docs.omniagent.dev" target="_blank" rel="noopener">Docs</a>
+            <a href="#faq">FAQ</a>
+        </div>
+        <div class="nav-right">
+            <div class="lang-toggle">
+                <button id="btn-en" class="active" onclick="setLang('en')">EN</button>
+                <button id="btn-cn" onclick="setLang('cn')">中文</button>
+            </div>
+            <a href="https://github.com/omniagent" target="_blank" rel="noopener" class="btn-secondary" style="padding: 8px 16px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                <span>GitHub</span>
+            </a>
+        </div>
+    </div>
+</nav>
+
+<main>
+
+<!-- ===== Hero ===== -->
+<section class="hero">
+    <div class="hero-glow"></div>
+    <div class="container-narrow" style="position: relative;">
+        <h1 class="fade-in fade-in-d1">
+            <img src="assets/omniagent-logo.png" alt="OmniAgent" style="width:250px;height:250px;margin-bottom:8px;">
+        </h1>
+        <p class="subtitle fade-in fade-in-d2" data-lang="en">An agent whose intelligence evolves with every interaction, and whose safety hardens dynamically.</p>
+        <p class="subtitle fade-in fade-in-d2" data-lang="cn">让Agent的智能随着交互持续进化，让安全动态加固。</p>
+        <p class="desc fade-in fade-in-d3" data-lang="en">Full-dimensional self-evolution (OmniEvolve): Skill self-evolution, Context self-evolution, BrainModel self-evolution. Plus Hyper Harness for safety and Deep Reflexion for task success.</p>
+        <p class="desc fade-in fade-in-d3" data-lang="cn">全维度自进化（OmniEvolve）：Skill自进化、Context自进化、BrainModel自进化。配合Hyper Harness安全支架与Deep Reflexion双层反思架构。</p>
+        <div class="hero-buttons fade-in fade-in-d4">
+            <a href="#quickstart" class="btn-primary">
+                <span data-lang="en">Get Started</span>
+                <span data-lang="cn">快速开始</span>
+            </a>
+            <a href="#features" class="btn-secondary">
+                <span data-lang="en">Explore Features</span>
+                <span data-lang="cn">了解特性</span>
+            </a>
+        </div>
+        <div class="hero-tags fade-in fade-in-d4">
+            <span class="hero-tag">Python 3.11+</span>
+            <span class="hero-tag">GPL-3.0</span>
+            <span class="hero-tag">9 LLM Providers</span>
+            <span class="hero-tag">18 Built-in Tools</span>
+        </div>
+    </div>
+</section>
+
+<!-- ===== Use Cases ===== -->
+<section id="usecases" class="usecases-section">
+    <div class="container-narrow">
+        <div class="section-title">
+            <h2>
+                <span data-lang="en">What Can You Do?</span>
+                <span data-lang="cn">你可以做什么</span>
+            </h2>
+            <p>
+                <span data-lang="en">OmniAgent handles real work across coding, research, ops, and communication.</span>
+                <span data-lang="cn">OmniAgent 在编码、调研、运维和多端部署中胜任真实工作。</span>
+            </p>
+        </div>
+        <div class="usecase-grid">
+            <div class="usecase-card">
+                <div class="usecase-icon">💻</div>
+                <h3>
+                    <span data-lang="en">Coding & Development</span>
+                    <span data-lang="cn">编码与开发</span>
+                </h3>
+                <p class="usecase-subtitle">
+                    <span data-lang="en">Write, debug, and refactor code — the agent learns your project.</span>
+                    <span data-lang="cn">编写、调试、重构代码 — Agent 从错误中学习你的项目结构。</span>
+                </p>
+                <p>
+                    <span data-lang="en">Read files, run commands, iterate with reflection retries. The agent builds understanding of your codebase over time and avoids past mistakes.</span>
+                    <span data-lang="cn">读取文件、执行命令、通过反思重试迭代。Agent 逐步理解你的代码库，避免重复犯错。</span>
+                </p>
+            </div>
+            <div class="usecase-card">
+                <div class="usecase-icon">🔍</div>
+                <h3>
+                    <span data-lang="en">Research & Analysis</span>
+                    <span data-lang="cn">调研与分析</span>
+                </h3>
+                <p class="usecase-subtitle">
+                    <span data-lang="en">Search the web, synthesize findings, cross-reference sources.</span>
+                    <span data-lang="cn">搜索网页、综合发现、交叉对比多个信息源。</span>
+                </p>
+                <p>
+                    <span data-lang="en">Fetch and summarize pages, run web searches, and compare results. Proactive Memory remembers what worked and avoids what didn't across sessions.</span>
+                    <span data-lang="cn">抓取并摘要页面、执行网页搜索、对比结果。主动式记忆跨会话记住有效方法和已踩的坑。</span>
+                </p>
+            </div>
+            <div class="usecase-card">
+                <div class="usecase-icon">🛡️</div>
+                <h3>
+                    <span data-lang="en">System Administration</span>
+                    <span data-lang="cn">系统运维</span>
+                </h3>
+                <p class="usecase-subtitle">
+                    <span data-lang="en">Run shell commands safely — four layers of protection guard every operation.</span>
+                    <span data-lang="cn">安全执行 Shell 命令 — 四层纵深防护保障每次操作。</span>
+                </p>
+                <p>
+                    <span data-lang="en">LLM review, policy engine, interactive approval, and sandbox protection. Dangerous commands require human consent; SSRF and path traversal are blocked automatically.</span>
+                    <span data-lang="cn">LLM 智能审查、策略引擎、交互审批、执行沙箱四层防护。危险命令需人工确认；SSRF 和路径遍历在沙箱层自动拦截。</span>
+                </p>
+            </div>
+            <div class="usecase-card">
+                <div class="usecase-icon">🌐</div>
+                <h3>
+                    <span data-lang="en">Multi-Channel Deployment</span>
+                    <span data-lang="cn">多端部署</span>
+                </h3>
+                <p class="usecase-subtitle">
+                    <span data-lang="en">Deploy once, reach everywhere: CLI, Web UI, Feishu, Discord, Telegram.</span>
+                    <span data-lang="cn">一次部署，全渠道触达：CLI、Web UI、飞书、Discord、Telegram。</span>
+                </p>
+                <p>
+                    <span data-lang="en">WebSocket + HTTP gateway with session management. New channels auto-register via package scanning — just add a Python file and it works.</span>
+                    <span data-lang="cn">WebSocket + HTTP Gateway，内置会话管理。新渠道通过包扫描自动注册 — 加一个 Python 文件即可接入。</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===== Comparison ===== -->
+<section class="comparison-section">
+    <div class="container-narrow">
+        <div class="section-title">
+            <h2>
+                <span data-lang="en">Why OmniAgent?</span>
+                <span data-lang="cn">为什么选择 OmniAgent</span>
+            </h2>
+            <p>
+                <span data-lang="en">Most agent frameworks are stuck at "static instructions + tool calls". OmniAgent goes further.</span>
+                <span data-lang="cn">大多数 Agent 框架停留在"静态指令 + 工具调用"。OmniAgent 更进一步。</span>
+            </p>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th class="teal" style="font-size: 1rem;">
+                            <span data-lang="en">OmniAgent</span>
+                            <span data-lang="cn">OmniAgent</span>
+                        </th>
+                        <th>
+                            <span data-lang="en">Typical Frameworks</span>
+                            <span data-lang="cn">典型框架</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="alt">
+                        <td class="label">
+                            <span data-lang="en">Evolution</span>
+                            <span data-lang="cn">进化能力</span>
+                        </td>
+                        <td class="teal">
+                            <span data-lang="en">OmniEvolve — Skill/Context/BrainModel real-time self-evolution</span>
+                            <span data-lang="cn">OmniEvolve — Skill/Context/BrainModel 实时自进化</span>
+                        </td>
+                        <td class="muted">
+                            <span data-lang="en">Static skills / config-dependent</span>
+                            <span data-lang="cn">静态技能 / 配置依赖</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label">
+                            <span data-lang="en">Execution</span>
+                            <span data-lang="cn">执行引擎</span>
+                        </td>
+                        <td class="teal">
+                            <span data-lang="en">HyperHarness — progressive loading, concurrent tools, 4-layer dynamic security</span>
+                            <span data-lang="cn">HyperHarness — 渐进式加载、并发工具、四层动态安全扫描</span>
+                        </td>
+                        <td class="muted">
+                            <span data-lang="en">Agent loop + static tools</span>
+                            <span data-lang="cn">单循环 + 静态工具</span>
+                        </td>
+                    </tr>
+                    <tr class="alt">
+                        <td class="label">
+                            <span data-lang="en">Agent Loop</span>
+                            <span data-lang="cn">Agent 循环</span>
+                        </td>
+                        <td class="teal">
+                            <span data-lang="en">Deep Reflexion — reflect on failure, extract lessons, retry with insight</span>
+                            <span data-lang="cn">Deep Reflexion — 反思失败、提取教训、带着洞察重试</span>
+                        </td>
+                        <td class="muted">
+                            <span data-lang="en">ReAct single loop</span>
+                            <span data-lang="cn">ReAct 单轮循环</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label">
+                            <span data-lang="en">Security</span>
+                            <span data-lang="cn">安全防护</span>
+                        </td>
+                        <td class="teal">
+                            <span data-lang="en">4-layer: LLM review → policy → approval → sandbox</span>
+                            <span data-lang="cn">四层：LLM 审查 → 策略引擎 → 交互审批 → 执行沙箱</span>
+                        </td>
+                        <td class="muted">
+                            <span data-lang="en">Application-level checks</span>
+                            <span data-lang="cn">应用层简单检查</span>
+                        </td>
+                    </tr>
+                    <tr class="alt">
+                        <td class="label">
+                            <span data-lang="en">Tool Execution</span>
+                            <span data-lang="cn">工具执行</span>
+                        </td>
+                        <td class="teal">
+                            <span data-lang="en">Parallel with auto-dependency resolution (~3x faster)</span>
+                            <span data-lang="cn">自动解析依赖，并行执行 (~3x 提速)</span>
+                        </td>
+                        <td class="muted">
+                            <span data-lang="en">Sequential execution</span>
+                            <span data-lang="cn">顺序执行</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="label">
+                            <span data-lang="en">LLM Backends</span>
+                            <span data-lang="cn">模型后端</span>
+                        </td>
+                        <td class="teal">
+                            <span data-lang="en">9 providers including local inference (vLLM / SGLang)</span>
+                            <span data-lang="cn">9 个提供商，含本地推理 (vLLM / SGLang)</span>
+                        </td>
+                        <td class="muted">
+                            <span data-lang="en">1-3 providers</span>
+                            <span data-lang="cn">1-3 个提供商</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- ===== Core Features ===== -->
+<section id="features" class="features-section">
+    <div class="container-narrow">
+        <div class="section-title">
+            <h2>
+                <span data-lang="en">Three Core Innovations</span>
+                <span data-lang="cn">三大核心创新</span>
+            </h2>
+            <p>
+                <span data-lang="en">The pillars that make OmniAgent different from every other agent framework.</span>
+                <span data-lang="cn">让 OmniAgent 不同于其他 Agent 框架的三大支柱。</span>
+            </p>
+        </div>
+        <div class="feature-grid">
+            <!-- OmniEvolve -->
+            <div class="feature-card">
+                <div class="feature-icon">🧬</div>
+                <h3>
+                    <span data-lang="en">OmniEvolve</span>
+                    <span data-lang="cn">OmniEvolve（全维度自进化）</span>
+                </h3>
+                <p class="feature-motto">
+                    <span data-lang="en">Intelligence evolves with every interaction, safety hardens dynamically.</span>
+                    <span data-lang="cn">智能随交互持续进化，安全动态加固。</span>
+                </p>
+                <ul>
+                    <li>
+                        <span data-lang="en"><strong>Proactive Memory</strong> — Dual-path alignment of explicit user feedback and implicit LLM induction enables autonomous precipitation and self-evolution of user profiles and memory.</span>
+                        <span data-lang="cn"><strong>主动式记忆</strong> — 显式用户反馈与隐式LLM归纳的双路对齐，实现用户画像与记忆的自主沉淀与自进化。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Skill Self-Evolution</strong> — Pattern extraction from high-frequency action sequences enables native auto-generation; dual-path feedback enables automatic skill repair.</span>
+                        <span data-lang="cn"><strong>Skill自进化</strong> — 高频Action序列范式提取实现原生自生成；用户交互与LLM诊断双路反馈实现自动诊断与修复。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Personalization Context</strong> — Real-time capture of multi-dimensional preference signals builds adaptive personalized context aligned with individual user preferences.</span>
+                        <span data-lang="cn"><strong>Personalization Context</strong> — 多维偏好信号实时捕捉，构建自适应个性化上下文，精准契合用户个性偏好。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>BrainModel Self-Evolution</strong> — Online reinforcement learning (GRPO + PRM) feedback loop enables closed-loop model self-evolution during interactive use.</span>
+                        <span data-lang="cn"><strong>BrainModel自进化</strong> — 在线强化学习 (GRPO + PRM) 反馈回路，实现交互中模型闭环自进化。</span>
+                    </li>
+                </ul>
+            </div>
+            <!-- HyperHarness -->
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <h3>
+                    <span data-lang="en">HyperHarness</span>
+                    <span data-lang="cn">HyperHarness（超级脚手架）</span>
+                </h3>
+                <p class="feature-motto">
+                    <span data-lang="en">Efficient, safe, and intelligent execution scaffold for complex tasks.</span>
+                    <span data-lang="cn">高效、安全、智能的执行支架，为复杂任务提供系统支撑。</span>
+                </p>
+                <ul>
+                    <li>
+                        <span data-lang="en"><strong>Progressive Context Loading</strong> — Progressive Disclosure design pattern, loading on demand in graduated stages (L0→L1→L2).</span>
+                        <span data-lang="cn"><strong>渐进式上下文加载</strong> — 渐进式披露设计模式，按需逐级加载 (L0→L1→L2)。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Dynamic Tool Execution</strong> — Auto-resolves inter-tool dependencies, shifting from serial to async parallel invocation.</span>
+                        <span data-lang="cn"><strong>动态工具执行</strong> — 自动解析工具间依赖，从串行等待转变为异步并行调用。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Defense in Depth</strong> — Four-layer dynamic security scanning: LLM review → Policy engine → Interactive approval → Execution sandbox. Trust-level classification, unbypassable (industry-first).</span>
+                        <span data-lang="cn"><strong>纵深防护</strong> — 四层动态安全扫描：LLM审查 → 策略引擎 → 交互审批 → 执行沙箱。信任分级，不可绕过（业内首创）。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Dynamic Multi-Agent</strong> — Sentinel (planning) and Guardian (safety) agents dynamically activated based on task complexity and risk level.</span>
+                        <span data-lang="cn"><strong>动态多智能体</strong> — Sentinel（规划）与 Guardian（守卫）根据任务复杂度与风险等级动态激活。</span>
+                    </li>
+                </ul>
+            </div>
+            <!-- Deep Reflexion -->
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>
+                    <span data-lang="en">Deep Reflexion</span>
+                    <span data-lang="cn">Deep Reflexion（内外双层反思架构）</span>
+                </h3>
+                <p class="feature-motto">
+                    <span data-lang="en">Improves task success rate (PASS@1) through dual-layer reflective correction.</span>
+                    <span data-lang="cn">通过内外双层反思纠偏，提升任务成功率 (PASS@1)。</span>
+                </p>
+                <ul>
+                    <li>
+                        <span data-lang="en"><strong>Reflexion Loop</strong> — LLM-driven automatic root cause analysis (RCA) and heuristic strategy extraction, dynamically injecting Reflexion into context for closed-loop corrective retry.</span>
+                        <span data-lang="cn"><strong>Reflexion 循环</strong> — LLM驱动的自动根因分析与启发式策略提取，动态注入反思实现闭环纠偏与智能重试。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Stuck Detection</strong> — Three-layer prevention (trajectory repetition, error action repetition, loop pseudo-termination) monitors risks and injects context.</span>
+                        <span data-lang="cn"><strong>卡死检测</strong> — 三层失败预防（轨迹重复、错误Action重复、Loop伪终止）监测风险并注入上下文。</span>
+                    </li>
+                    <li>
+                        <span data-lang="en"><strong>Context Compaction</strong> — Inner-to-outer failure experience conversion: fault-driven RCA extracts reflection and injects it into the outer loop context space.</span>
+                        <span data-lang="cn"><strong>上下文压缩</strong> — 内层失败经验转化至外层：故障驱动的自动根因分析提取反思，注入外层上下文空间。</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===== Quick Start ===== -->
+<section id="quickstart" class="quickstart-section">
+    <div class="container-narrow">
+        <div class="quickstart-wrapper" style="text-align: center;">
+            <h2>
+                <span data-lang="en">Get Started in 3 Steps</span>
+                <span data-lang="cn">三步快速开始</span>
+            </h2>
+            <p style="margin-top: 12px; font-size: 1.0625rem;">
+                <span data-lang="en">Install, configure, start chatting.</span>
+                <span data-lang="cn">安装、配置、开始对话。</span>
+            </p>
+        </div>
+        <div class="quickstart-wrapper">
+            <div class="code-block">
+                <div class="code-header">
+                    <div class="dot red"></div>
+                    <div class="dot yellow"></div>
+                    <div class="dot green"></div>
+                    <span>Terminal</span>
+                </div>
+                <code><span class="comment"># 1. Install</span>
+<span class="prompt">$</span> <span class="cmd">pip install</span> <span class="arg">-e .</span>
+
+<span class="comment"># 2. Interactive setup</span>
+<span class="prompt">$</span> <span class="cmd">omniagent onboard</span>
+
+<span class="comment"># 3. Start</span>
+<span class="prompt">$</span> <span class="cmd">omniagent chat</span>                    <span class="comment"># CLI</span>
+<span class="prompt">$</span> <span class="cmd">omniagent serve</span>                   <span class="comment"># Web UI → http://127.0.0.1:18790</span></code>
+            </div>
+
+            <div class="tip-box">
+                <p>
+                    <span data-lang="en"><strong>Switch providers on the fly:</strong> <code>omniagent chat --provider deepseek</code> — supports 9 backends including local inference.</span>
+                    <span data-lang="cn"><strong>随时切换提供商：</strong> <code>omniagent chat --provider deepseek</code> — 支持 9 个后端，含本地推理。</span>
+                </p>
+            </div>
+
+            <div style="margin-top: 32px;">
+                <h3 style="margin-bottom: 16px; font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate-500);">
+                    <span data-lang="en">Requirements</span>
+                    <span data-lang="cn">环境要求</span>
+                </h3>
+                <div class="requirements">
+                    <span class="req-tag">Python 3.11+</span>
+                    <span class="req-tag">LLM API Key</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===== FAQ ===== -->
+<section id="faq" class="faq-section">
+    <div class="container-narrow">
+        <div class="section-title">
+            <h2>
+                <span data-lang="en">FAQ</span>
+                <span data-lang="cn">常见问题</span>
+            </h2>
+        </div>
+        <div class="faq-list">
+            <details class="faq-item">
+                <summary class="faq-question">
+                    <h3>
+                        <span data-lang="en">What is OmniAgent?</span>
+                        <span data-lang="cn">OmniAgent 是什么？</span>
+                    </h3>
+                    <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                    <p data-lang="en">OmniAgent is an open-source AI Agent framework built around three core innovations — OmniEvolve (self-evolution), HyperHarness (safe execution), and Deep Reflexion (learn from mistakes). It supports 9 LLM providers, 18 built-in tools, multi-channel gateway, and runs on Python 3.11+ with native asyncio.</p>
+                    <p data-lang="cn">OmniAgent 是一个开源 AI Agent 框架，围绕三大核心创新构建 — OmniEvolve（全维度自进化）、HyperHarness（超级脚手架）、Deep Reflexion（内外双层反思架构）。支持 9 个 LLM 提供商、18 个内置工具、多渠道 Gateway，基于 Python 3.11+ 原生 asyncio 运行。</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">
+                    <h3>
+                        <span data-lang="en">How is OmniAgent different from other agent frameworks?</span>
+                        <span data-lang="cn">OmniAgent 和其他 Agent 框架有什么不同？</span>
+                    </h3>
+                    <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                    <p data-lang="en">Most frameworks use simple ReAct loops with sequential tool execution. OmniAgent adds three dimensions: (1) Self-evolution — the agent writes its own skills and learns from mistakes; (2) HyperHarness — parallel tool execution, progressive context loading, and 4-layer security; (3) Deep Reflexion — instead of blind retries, the agent reflects on root causes and retries with insight.</p>
+                    <p data-lang="cn">大多数框架使用简单的 ReAct 循环和顺序工具执行。OmniAgent 在三个维度上更进一步：(1) 自进化 — Agent 自动编写技能并从错误中学习；(2) HyperHarness — 并行工具执行、渐进式上下文加载、四层安全防护；(3) Deep Reflexion — 不盲目重试，而是分析根因并带着洞察重试。</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">
+                    <h3>
+                        <span data-lang="en">What LLM providers are supported?</span>
+                        <span data-lang="cn">支持哪些 LLM 提供商？</span>
+                    </h3>
+                    <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                    <p data-lang="en">9 backends: DeepSeek, OpenAI, Anthropic, Ollama, Google Gemini, OpenRouter, vLLM, SGLang, and Custom (any OpenAI-compatible endpoint). All support native function calling. You can switch providers on the fly with <code>--provider</code> flag or configure different models per agent.</p>
+                    <p data-lang="cn">9 个后端：DeepSeek、OpenAI、Anthropic、Ollama、Google Gemini、OpenRouter、vLLM、SGLang 和 Custom（任何 OpenAI 兼容端点）。全部支持原生 function calling。可以通过 <code>--provider</code> 参数随时切换，或为不同 Agent 配置不同模型。</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">
+                    <h3>
+                        <span data-lang="en">How does the security system work?</span>
+                        <span data-lang="cn">安全系统是怎么工作的？</span>
+                    </h3>
+                    <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                    <p data-lang="en">Four-layer defense: (1) Guardian Agent — LLM-driven contextual safety review; (2) ToolPolicy — rule-based interception with priority engine; (3) ApprovalManager — interactive approval for dangerous commands; (4) Sandbox — SSRF protection, path traversal prevention, dangerous command blocking. All tool executions are audit-logged.</p>
+                    <p data-lang="cn">四层纵深防护：(1) Guardian — LLM 驱动的上下文安全审查；(2) ToolPolicy — 基于规则的拦截引擎；(3) ApprovalManager — 危险命令的交互式审批；(4) 沙箱 — SSRF 防护、路径遍历拦截、危险命令阻断。所有工具执行均有审计日志。</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">
+                    <h3>
+                        <span data-lang="en">What channels are available?</span>
+                        <span data-lang="cn">支持哪些渠道？</span>
+                    </h3>
+                    <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                    <p data-lang="en">Terminal CLI, Web UI (served via Gateway with real-time WebSocket), and messaging bots: Feishu, Discord, Telegram. The gateway also exposes a JSON API (<code>POST /message</code>) and health check endpoint. New channels auto-register via package scanning.</p>
+                    <p data-lang="cn">终端 CLI、Web UI（通过 Gateway 实时 WebSocket 通信）和消息机器人：飞书、Discord、Telegram。Gateway 同时暴露 JSON API（<code>POST /message</code>）和健康检查端点。新渠道通过包扫描自动注册。</p>
+                </div>
+            </details>
+            <details class="faq-item">
+                <summary class="faq-question">
+                    <h3>
+                        <span data-lang="en">Is OmniAgent open source?</span>
+                        <span data-lang="cn">OmniAgent 是开源的吗？</span>
+                    </h3>
+                    <svg class="faq-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </summary>
+                <div class="faq-answer">
+                    <p data-lang="en">Yes. OmniAgent is fully open source under the GPL-3.0 license. Contributions are welcome.</p>
+                    <p data-lang="cn">是的。OmniAgent 基于 GPL-3.0 许可证完全开源，欢迎贡献。</p>
+                </div>
+            </details>
+        </div>
+    </div>
+</section>
+
+</main>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+    <div class="footer-inner">
+        <div class="footer-left">
+            <span class="footer-logo">Omni<span>Agent</span></span>
+            <span class="footer-divider">|</span>
+            <span class="footer-link">GPL-3.0</span>
+            <span class="footer-divider">|</span>
+            <span class="footer-link" data-lang="en">Intelligence evolves, safety hardens.</span>
+            <span class="footer-link" data-lang="cn">智能随交互持续进化，安全动态加固。</span>
+        </div>
+        <div class="footer-right">
+            <a href="https://git.sankuai.com" target="_blank" rel="noopener" class="footer-link">GitLab</a>
+        </div>
+    </div>
+</footer>
+
+<!-- ===== Language Switch ===== -->
+<script>
+function setLang(lang) {
+    document.body.classList.toggle('lang-cn', lang === 'cn');
+    document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+    document.getElementById('btn-cn').classList.toggle('active', lang === 'cn');
+    localStorage.setItem('omniagent-lang', lang);
+}
+// Restore saved preference
+(function() {
+    var saved = localStorage.getItem('omniagent-lang');
+    if (saved) setLang(saved);
+})();
+</script>
+
+</body>
+</html>
