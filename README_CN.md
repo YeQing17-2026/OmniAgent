@@ -30,7 +30,7 @@
 - **Deep Reflexion**：通过内外双层反思架构，实时风险拦截与失败经验转化，为 OmniAgent 的复杂任务成功率提供系统支撑
 
 ---
-**OmniAgent** VS **OpenClaw** VS **Hermes**
+## **OmniAgent** VS **OpenClaw** VS **Hermes**
 
 | 维度 | OpenClaw | Hermes | * OmniAgent |
 | :---- | :---- | :---- | :---- |
