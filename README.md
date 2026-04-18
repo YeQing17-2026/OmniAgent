@@ -1,6 +1,6 @@
 <div align="center">
 <p align="center">
-  <img src="assets/Gemini_Generated_Image_udkiymudkiymudki.png" alt="OmniAgent" width="200">
+  <img src="assets/omniagent-logo.png" alt="OmniAgent" width="200">
 </p>
 
 # OmniAgent
