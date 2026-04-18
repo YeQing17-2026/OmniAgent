@@ -25,7 +25,7 @@ An agent capable of self-evolving and dynamically hardening security
 - **BrainModel Self-Evolution**: Through a novel online reinforcement learning feedback loop, the BrainModel iterates dynamically during interaction
 
 Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolution of the Agent. Additionally, **Hyper Harness** and **Deep Reflexion** modules enhance system safety and task success rate:
-- **Hyper Harness**: An efficient, safe, and intelligent execution scaffold that provides systematic support for complex tasks
+- **Hyper-Harness**: An efficient, safe, and intelligent execution scaffold that provides systematic support for complex tasks
 - **Deep Reflexion**: A dual-layer reflective architecture — real-time risk interception and failure-to-insight conversion — providing a robust guarantee for task success rate
 
 ---
@@ -38,7 +38,7 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 | **Context Evolution** | Static context assembly, no evolution (weak) | Prompt-instruction-based evolution (weak) | Real-time interaction feedback + LLM summarization self-evolution (strong) |
 | **BrainModel Evolution** | Fixed model, no evolution | Fixed model, no evolution | Self-deployed model, online RL evolution |
 | **Harness Safety** | Static security scanning (bypassable) | Skill trust-level policy, static scanning (bypassable) | **Tool & Skill** trust-level policy + four-layer dynamic security scanning (unbypassable) |
-| **Hyper Harness** | None (slow) | None (slow) | Dynamic multi-agent + dynamic concurrent tool execution (fast) |
+| **Hyper-Harness** | None (slow) | None (slow) | Dynamic multi-agent + dynamic concurrent tool execution (fast) |
 | **Agent Loop** | ReAct single loop (low success rate) | ReAct single loop (low success rate) | Dual-layer Deep Reflexion loop (high success rate) |
 
 
@@ -51,7 +51,7 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 - **Personalization Context**: Through real-time capture of multi-dimensional preference signals, an adaptive personalized context is constructed, achieving precise alignment between the Agent Loop and individual user preferences
 - **BrainModel Self-Evolution**: Through a novel online reinforcement learning (GRPO + PRM) feedback loop, the BrainModel achieves closed-loop self-evolution during interactive use
 
-**Hyper Harness (Super Scaffold)**: A more efficient, safe, and intelligent Harness engine.
+**Hyper-Harness (Super Scaffold)**: A more efficient, safe, and intelligent Harness engine.
 
 - **Progressive Context Loading**: A design pattern inspired by Anthropic Claude Skills — Progressive Disclosure — loading on demand in graduated stages
 - **Dynamic Multi-Agent**: Introducing **Sentinel** (planning) and **Guardian** (safety) agents that dynamically analyze task complexity and risk level, activating in real-time to improve success rate and safety
@@ -140,7 +140,7 @@ agent:
 │  Reflexion Agent Loop                                │
 │                                                      │
 │  ┌─────────────────┐  ┌──────────────────────────┐   │
-│  │ Deep Reflexion  │  │ Hyper Harness            │   │
+│  │ Deep Reflexion  │  │ Hyper-Harness            │   │
 │  │ Reflexion Loop  │  │ ┌────────────────────┐   │   │
 │  │ Failure Prevent │  │ │Progressive Loading │   │   │
 │  └─────────────────┘  │ │Dynamic Tool Exec   │   │   │
