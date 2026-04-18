@@ -32,7 +32,7 @@
 ---
 **OmniAgent** VS **OpenClaw** VS **Hermes**
 
-| 维度 | OpenClaw | Hermes | <font color="red">OmniAgent</font> |
+| 维度 | OpenClaw | Hermes | *OmniAgent |
 | :--- | :--- | :--- | :--- |
 | **Skill 进化模式** | 静态无进化 | 执行结束后**定期**进化（慢） | 执行过程中**实时**自进化（快） |
 | **Skill 注入策略** | User Message | User Message | User Message（节约90%token成本） |
