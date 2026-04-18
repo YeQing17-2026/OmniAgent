@@ -4,7 +4,7 @@
 </p>
 
 # OmniAgent
-让Agent随交互持续进化，让安全随使用动态加固。
+让Agent随交互持续进化，让安全随使用动态加固
 
 <p align="center">
   <a href="https://yeqing17-2026.github.io/OmniAgent/">Website</a>&nbsp; • &nbsp;
