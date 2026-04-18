@@ -26,7 +26,7 @@
 - **BrainModel自进化**：通过新型在线强化学习反馈回路，实现 BrainModel 在交互中动态迭代自进化
 
 基于以上达成了 Agent 全维度（Skill、Context、BrainModel）自进化。 同时全新设计Hyper-Harness 和 Deep Reflexion 模块，提升与保证Agent 系统安全性与任务成功率：
-- **Hyper Harness**：一款原创的高效、安全、智能的执行支架，为 OmniAgent 的复杂任务的安全性提供系统支撑 
+- **Hyper-Harness**：一款原创的高效、安全、智能的执行支架，为 OmniAgent 的复杂任务的安全性提供系统支撑 
 - **Deep Reflexion**：通过内外双层反思架构，实时风险拦截与失败经验转化，为 OmniAgent 的复杂任务成功率提供系统支撑
 
 ---
@@ -39,7 +39,7 @@
 | **Context 进化模式** | 静态 Contex无进化 | 基于 Prompt 指令进化（弱） | 基于实时交互反馈和 LLM 总结反馈自进化（强） |
 | **BrainModel 进化模式** | 固定模型 无进化 | 固定模型 无进化 | 自部署模型 在线强化学习进化 | 
 | **Harness 安全** | 静态安全扫描（可绕过） | Skill 信任分级策略、静态安全扫描（可绕过）| **Tool&Skill** 信任分级策略、四层安全动态扫描系统（不可绕过） |
-| **Hyper Harness** | 无（慢）| 无（慢） | 动态多智能体、Tool 动态并发执行（快） |
+| **Hyper-Harness** | 无（慢）| 无（慢） | 动态多智能体、Tool 动态并发执行（快） |
 | **Agent Loop** | ReAct 单轮循环（成功率低） | ReAct 单轮循环（成功率低） | 内外双层循环 Deep Reflexion （成功率高） |
 |
 
