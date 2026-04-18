@@ -39,7 +39,7 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 | **BrainModel Evolution** | Fixed model, no evolution | Fixed model, no evolution | Self-deployed model, online RL evolution |
 | **Harness Safety** | Static security scanning (bypassable) | Skill trust-level policy, static scanning (bypassable) | **Tool & Skill** trust-level policy + four-layer dynamic security scanning (unbypassable) |
 | **Hyper-Harness** | None (slow) | None (slow) | Dynamic multi-agent + dynamic concurrent tool execution (fast) |
-| **Agent Loop** | ReAct single loop (low success rate) | ReAct single loop (low success rate) | Dual-layer Deep Reflexion loop (high success rate) |
+| **Agent-Loop** | ReAct single loop (low success rate) | ReAct single loop (low success rate) | Dual-layer Deep Reflexion loop (high success rate) |
 
 
 ## Core Features
@@ -48,7 +48,7 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 
 - **Proactive Memory**: Based on a multi-layer information stack, a dual-path alignment mechanism of explicit user feedback and implicit LLM induction enables autonomous precipitation and continuous self-evolution of user profiles and memory
 - **Skill Self-Evolution**: Through pattern extraction from high-frequency action sequences, skills are natively auto-generated; leveraging dual-path feedback from user interaction and LLM diagnosis, skills are automatically diagnosed and repaired
-- **Personalization Context**: Through real-time capture of multi-dimensional preference signals, an adaptive personalized context is constructed, achieving precise alignment between the Agent Loop and individual user preferences
+- **Personalization Context**: Through real-time capture of multi-dimensional preference signals, an adaptive personalized context is constructed, achieving precise alignment between the Agent-Loop and individual user preferences
 - **BrainModel Self-Evolution**: Through a novel online reinforcement learning (GRPO + PRM) feedback loop, the BrainModel achieves closed-loop self-evolution during interactive use
 
 **Hyper-Harness (Super Scaffold)**: A more efficient, safe, and intelligent Harness engine.
@@ -137,7 +137,7 @@ agent:
 └──────────────────────┬───────────────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────────────┐
-│  Reflexion Agent Loop                                │
+│  Reflexion Agent-Loop                                │
 │                                                      │
 │  ┌─────────────────┐  ┌──────────────────────────┐   │
 │  │ Deep Reflexion  │  │ Hyper-Harness            │   │
