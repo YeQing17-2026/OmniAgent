@@ -85,10 +85,15 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 ### Installation
 
 ```bash
-pip install -e .
+# 1. Install
+$ pip install -e .
 
-# Interactive setup — choose provider, enter API key, done
-omniagent onboard
+# 2. Interactive setup — choose provider, enter API key, done
+$ omniagent onboard
+
+# 3. Start
+$ omniagent chat                    # CLI
+$ omniagent serve                   # Web UI → http://127.0.0.1:18790
 ```
 
 ### Three Ways to Interact
