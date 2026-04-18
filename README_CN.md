@@ -33,7 +33,7 @@
 **OmniAgent** VS **OpenClaw** VS **Hermes**
 
 | 维度 | OpenClaw | Hermes | * OmniAgent |
-| :--- | :--- | :--- | :--- |
+| :---- | :---- | :---- | :---- |
 | **Skill 进化** | 静态无进化 | 执行结束后**定期**进化（慢） | 执行过程中**实时**自进化（快） |
 | **Skill 注入** | User Message | User Message | User Message（节约90%token成本） |
 | **Context 进化** | 静态 Contex无进化 | 基于 Prompt 指令进化（弱） | 基于实时交互反馈和 LLM 总结反馈自进化（强） |
