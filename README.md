@@ -4,7 +4,7 @@
 </p>
 
 # OmniAgent
-An agent whose intelligence evolves with every interaction, and whose safety hardens dynamically.
+An agent capable of self-evolving and dynamically hardening security
 
 <p align="center">
   <a href="https://yeqing17-2026.github.io/OmniAgent/">Website</a>&nbsp; • &nbsp;
