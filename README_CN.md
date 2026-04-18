@@ -25,7 +25,7 @@
 - **Context自进化**：基于多层信息栈架构，基于对用户实时交互反馈和LLM总结反馈，实时更新记忆与用户偏好，实现了Personalization Memory&Context的自进化
 - **BrainModel自进化**：通过新型在线强化学习反馈回路，实现 BrainModel 在交互中动态迭代自进化
 
-基于以上达成了 Agent 全维度（Skill、Context、BrainModel）的自进化。 同时新设计Hyper-Harness 和 Deep Reflexion 模块，提升 Agent 系统安全性与任务成功率：
+基于以上达成了 Agent 全维度（Skill、Context、BrainModel）自进化。 同时全新设计Hyper-Harness 和 Deep Reflexion 模块，提升与保证Agent 系统安全性与任务成功率：
 - **Hyper Harness**：一款原创的高效、安全、智能的执行支架，为 OmniAgent 的复杂任务提供系统支撑 
 - **Deep Reflexion**：通过内外双层反思架构，实时风险拦截与失败经验转化，为 Agent 任务成功率提供了稳健保障系统
 
