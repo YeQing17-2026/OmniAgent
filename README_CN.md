@@ -19,7 +19,7 @@
 
 
 </div>
-
+---
 **OmniAgent** 是一个基于 OpenClaw 设计思想的开源 Agent 框架。是当前唯一实现全维度自进化 (**OmniEvolve**) 的 Agent：  
 - **Skill自进化**：通过交互中技能的自动创建、检查、修复，实现了 Skill 的实时自进化  
 - **Context自进化**：基于多层信息栈架构，基于对用户实时交互反馈和LLM总结反馈，实时更新记忆与用户偏好，实现了Personalization Memory&Context的自进化
@@ -43,7 +43,7 @@
 | **Hyper-Harness** | 无（慢）| 无（慢） | 动态多智能体、Tool 动态并发执行（快） |
 | **Agent-Loop** | ReAct 单轮循环（成功率低） | ReAct 单轮循环（成功率低） | 内外双层循环 Deep Reflexion （成功率高） |
 
-
+---
 ## 核心能力
 
 **OmniEvolve（全维进化）**：Agent 随交互持续进化，安全动态加固。
