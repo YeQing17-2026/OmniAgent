@@ -40,7 +40,7 @@
 | **BrainModel 进化模式** | 固定模型 无进化 | 固定模型 无进化 | 自部署模型 在线强化学习进化 | 
 | **Harness 安全** | 静态安全扫描（可绕过） | Skill 信任分级策略、静态安全扫描（可绕过）| **Tool&Skill** 信任分级策略、四层安全动态扫描系统（不可绕过） |
 | **Hyper-Harness** | 无（慢）| 无（慢） | 动态多智能体、Tool 动态并发执行（快） |
-| **Agent Loop** | ReAct 单轮循环（成功率低） | ReAct 单轮循环（成功率低） | 内外双层循环 Deep Reflexion （成功率高） |
+| **Agent-Loop** | ReAct 单轮循环（成功率低） | ReAct 单轮循环（成功率低） | 内外双层循环 Deep Reflexion （成功率高） |
 |
 
 
