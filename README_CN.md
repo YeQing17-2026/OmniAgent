@@ -87,10 +87,15 @@
 ### 安装
 
 ```bash
-pip install -e .
+# 1. 初始化
+$ pip install -e .
 
-# 交互式配置向导 — 选择提供商、输入 API Key，一步到位
-omniagent onboard
+# 2.交互式配置向导 — 选择提供商、输入 API Key，一步到位
+$ omniagent onboard
+
+# 3. 开启试用
+$ omniagent chat                    # CLI
+$ omniagent serve                   # Web UI → http://127.0.0.1:18790
 ```
 
 ### 三种交互方式
