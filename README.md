@@ -32,7 +32,7 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 ---
 **OmniAgent** V.S. **OpenClaw** V.S. **Hermes**
 
-| Dimension | OpenClaw | Hermes | OmniAgent |
+| Dimension | OpenClaw | Hermes | * OmniAgent |
 | :--- | :--- | :--- | :--- |
 | **Skill Evolution** | Static skills, no evolution | **Periodic** post-execution evolution (slow to take effect) | **Real-time** self-evolution during execution (fast to take effect) |
 | **Skill Injection** | User Message | User Message | User Message (saves 90% token cost) |
