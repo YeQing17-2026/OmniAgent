@@ -4,7 +4,7 @@
 </p>
 
 # OmniAgent
-An agent capable of self-evolving and dynamically hardening security
+An agent capable of omni-self-evolving and dynamically hardening security
 
 <p align="center">
   <a href="https://yeqing17-2026.github.io/OmniAgent/">Website</a>&nbsp; • &nbsp;
@@ -19,7 +19,8 @@ An agent capable of self-evolving and dynamically hardening security
 
 </div>
 
-**OmniAgent** is an open-source AI Agent framework inspired by OpenClaw. It's the only agent that implements full-dimensional self-evolution (**OmniEvolve**):
+**OmniAgent** is an open-source self-evolving Agent framework inspired by OpenClaw. It's the only agent that implements full-dimensional self-evolution (**OmniEvolve**):
+- **Proactive Memory**: A dual-path alignment mechanism based on explicit interactive feedback and implicit LLM induction enables proactive memory and self-evolving
 - **Skill Self-Evolution**: Through automatic creation, inspection, and repair of skills during interaction, skills evolve in real-time
 - **Context Self-Evolution**: Built on a multi-layer information stack architecture, leveraging real-time user interaction feedback and LLM summarization feedback to continuously update memory and user preferences — achieving self-evolving Personalization Context
 - **BrainModel Self-Evolution**: Through a novel online reinforcement learning feedback loop, the BrainModel iterates dynamically during interaction
@@ -184,11 +185,12 @@ omniagent/
 
 ### Near-term
 
-- [ ] **Four-Layer Memory System Self-Evolution (Proactive Memory 2.0)** — Automatically extract and persist long-term memories from conversations, refine the proactive memory system, and resolve conflicts between self-evolution rules
+- [ ] **Four-Layer Proactive Memory System (Proactive Memory 2.0)** — Automatically extract and persist long-term memories from conversations, refine the proactive memory system, and resolve conflicts between self-evolution rules
+- [ ] **Agent Plan-Mode** — Implement a new Agent planning mode that generates and confirms a plan before executing complex tasks, then executes step by step
 - [ ] **Channel Ecosystem Expansion** — Add WeChat, WeCom, DingTalk, and more connectors; improve channel abstraction layer to reduce integration cost
-- [ ] **Plan-Mode** — Implement a new Agent planning mode that generates and confirms a plan before executing complex tasks, then executes step by step
 - [ ] **Multi-Agent Collaboration** — Enhance inter-agent communication and task orchestration, support dynamic delegation and result aggregation between agents
 - [ ] **Documentation**
+- [ ] **More Tests**
 
 ---
 
