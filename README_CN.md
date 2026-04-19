@@ -212,6 +212,17 @@ omniagent/
 本项目基于 [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.txt) 许可证开源。引用本项目的代码必须以相同许可证开源。
 
 ---
+## Star History
+
+<a href="https://www.star-history.com/?repos=YeQing17-2026%2FOmniAgent&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
 
 <div align="center">
 
