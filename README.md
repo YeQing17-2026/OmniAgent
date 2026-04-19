@@ -206,13 +206,7 @@ We welcome contributions of all kinds — bug fixes, new tools, channel connecto
 
 This project is licensed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.txt). Any code that references this project must also be open-sourced under the same license.
 
----
 
-<div align="center">
-
-**OmniAgent** — An agent whose intelligence evolves with every interaction, and whose safety hardens dynamically.
-
-</div>
 
 ---
 ## Star History
@@ -224,3 +218,10 @@ This project is licensed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.tx
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
  </picture>
 </a>
+
+---
+<div align="center">
+
+**OmniAgent** — An agent whose intelligence evolves with every interaction, and whose safety hardens dynamically.
+
+</div>
