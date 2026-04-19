@@ -180,7 +180,6 @@ omniagent/
 ```
 
 ---
-
 ## Roadmap
 
 ### Near-term
@@ -193,7 +192,6 @@ omniagent/
 - [ ] **More Tests**
 
 ---
-
 ## Contributing
 
 1. Fork the repo and create a feature branch
@@ -202,17 +200,6 @@ omniagent/
 4. Submit a pull request
 
 We welcome contributions of all kinds — bug fixes, new tools, channel connectors, and documentation improvements.
-
----
-## Star History
-
-<a href="https://www.star-history.com/?repos=YeQing17-2026%2FOmniAgent&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
- </picture>
-</a>
 
 ---
 ## License
@@ -226,3 +213,14 @@ This project is licensed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.tx
 **OmniAgent** — An agent whose intelligence evolves with every interaction, and whose safety hardens dynamically.
 
 </div>
+
+---
+## Star History
+
+<a href="https://www.star-history.com/?repos=YeQing17-2026%2FOmniAgent&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
+ </picture>
+</a>
