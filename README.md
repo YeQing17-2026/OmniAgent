@@ -204,7 +204,17 @@ omniagent/
 We welcome contributions of all kinds — bug fixes, new tools, channel connectors, and documentation improvements.
 
 ---
+## Star History
 
+<a href="https://www.star-history.com/?repos=YeQing17-2026%2FOmniAgent&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=YeQing17-2026/OmniAgent&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
 ## License
 
 This project is licensed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.txt). Any code that references this project must also be open-sourced under the same license.
