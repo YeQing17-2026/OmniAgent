@@ -84,19 +84,40 @@
 
 ## 快速开始
 
-**环境要求：** Python 3.11+，LLM API Key（DeepSeek / OpenAI / Anthropic / Ollama / Gemini）。
+**环境要求：** Python 3.11+。基础安装已包含 Gemini、飞书、Discord、Telegram 等运行依赖，不再要求用户理解 extras。
 
 ### 安装
 
+`curl:`
+
 ```bash
-# 1. 初始化
-$ pip install -e .
-
-# 2.交互式配置向导 — 选择提供商、输入 API Key，一步到位
+$ curl -fsSL https://raw.githubusercontent.com/YeQing17-2026/OmniAgent/main/install.sh | bash
 $ omniagent onboard
-
-# 3. 开启试用
 $ omniagent chat                    # CLI
+$ omniagent serve                   # Web UI → http://127.0.0.1:18790
+```
+
+如果新终端里找不到 `omniagent`，把 `~/.local/bin` 加到 `PATH`。
+
+`uv:`
+
+```bash
+$ uv venv --python 3.11
+$ uv sync
+$ uv run omniagent onboard
+$ uv run omniagent chat
+$ uv run omniagent serve            # Web UI → http://127.0.0.1:18790
+```
+
+`pip:`
+
+```bash
+$ python3 -m venv .venv
+$ source .venv/bin/activate
+$ python -m pip install -U pip
+$ python -m pip install -e .
+$ omniagent onboard
+$ omniagent chat
 $ omniagent serve                   # Web UI → http://127.0.0.1:18790
 ```
 
@@ -105,8 +126,8 @@ $ omniagent serve                   # Web UI → http://127.0.0.1:18790
 | 方式 | 命令 | 说明 |
 |------|------|------|
 | **终端** | `omniagent chat` | 终端内交互式对话 |
-| **Web UI** | `omniagent serve` | 启动 Gateway，浏览器打开 http://127.0.0.1:18790 |
-| **移动端**（飞书 / Discord / Telegram） | `omniagent serve` | 启动 Gateway，并在 `config.yaml` 中配置 Channel，最后在终端打开会话 |
+| **Web UI** | `omniagent serve` | 启动 Gateway，然后在浏览器打开 http://127.0.0.1:18790 |
+| **移动端**（飞书 / Discord / Telegram） | `omniagent serve` | 启动 Gateway，并在 `~/.omniagent/config.yaml` 中配置渠道（或通过 `--config` 指定配置文件），然后直接在对应平台给机器人发消息 |
 
 ---
 

@@ -68,7 +68,10 @@ class FeishuChannel(BaseChannel):
     async def start(self) -> None:
         """Start the Feishu bot with WebSocket long connection."""
         if not FEISHU_AVAILABLE:
-            logger.error("feishu_sdk_not_installed", hint="pip install lark-oapi")
+            logger.error(
+                "feishu_sdk_not_installed",
+                hint="lark-oapi is missing from the current OmniAgent environment. Reinstall OmniAgent to restore bundled runtime dependencies.",
+            )
             return
 
         if not self.config.app_id or not self.config.app_secret:
