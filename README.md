@@ -81,18 +81,39 @@ Together, these enable full-dimensional (Skill, Context, BrainModel) self-evolut
 
 ## Quick Start
 
-**Requirements:** Python 3.11+, an LLM API key (DeepSeek / OpenAI / Anthropic / Ollama / Gemini).
+**Requirements:** Python 3.11+. The base install now bundles Gemini, Feishu, Discord, Telegram, and other runtime dependencies, so users do not need to learn extras first.
 
 ### Installation
 
+`curl:`
+
 ```bash
-# 1. Install
-$ pip install -e .
-
-# 2. Interactive setup — choose provider, enter API key, done
+$ curl -fsSL https://raw.githubusercontent.com/YoungCan-Wang/OmniAgent/main/install.sh | bash
 $ omniagent onboard
+$ omniagent chat                    # CLI
+$ omniagent serve                   # Web UI → http://127.0.0.1:18790
+```
 
-# 3. Start
+If `omniagent` is not found in a new shell, add `~/.local/bin` to your `PATH`.
+
+`uv:`
+
+```bash
+$ uv venv --python 3.11
+$ uv sync
+$ uv run omniagent onboard
+$ uv run omniagent chat
+$ uv run omniagent serve            # Web UI → http://127.0.0.1:18790
+```
+
+`pip:`
+
+```bash
+$ python3 -m venv .venv
+$ source .venv/bin/activate
+$ python -m pip install -U pip
+$ python -m pip install -e .
+$ omniagent onboard
 $ omniagent chat                    # CLI
 $ omniagent serve                   # Web UI → http://127.0.0.1:18790
 ```
@@ -102,8 +123,8 @@ $ omniagent serve                   # Web UI → http://127.0.0.1:18790
 | Mode | Command | Description |
 |------|---------|-------------|
 | **Terminal** | `omniagent chat` | Interactive chat in your terminal |
-| **Web UI** | `omniagent serve` | Start Gateway, open http://127.0.0.1:18790 in your browser |
-| **Mobile** (Feishu / Discord / Telegram) | `omniagent serve` | Start Gateway, configure Channel in `config.yaml`, then open a session in your terminal |
+| **Web UI** | `omniagent serve` | Start Gateway, then open http://127.0.0.1:18790 in your browser |
+| **Mobile** (Feishu / Discord / Telegram) | `omniagent serve` | Start Gateway, configure the channel in `~/.omniagent/config.yaml` (or pass `--config`), then message the bot on that platform |
 
 ---
 

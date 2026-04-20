@@ -47,7 +47,10 @@ class TelegramChannel(BaseChannel):
             logger.info("telegram_client_initialized")
             return True
         except ImportError:
-            logger.warning("telegram_not_installed", msg="python-telegram-bot is not installed. Install with: pip install python-telegram-bot")
+            logger.warning(
+                "telegram_not_installed",
+                msg="python-telegram-bot is missing from the current OmniAgent environment. Reinstall OmniAgent to restore bundled runtime dependencies.",
+            )
             return False
 
     async def start(self) -> None:

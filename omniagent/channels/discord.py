@@ -50,7 +50,10 @@ class DiscordChannel(BaseChannel):
             logger.info("discord_client_initialized")
             return True
         except ImportError:
-            logger.warning("discord_not_installed", msg="discord.py is not installed. Install with: pip install discord.py")
+            logger.warning(
+                "discord_not_installed",
+                msg="discord.py is missing from the current OmniAgent environment. Reinstall OmniAgent to restore bundled runtime dependencies.",
+            )
             return False
 
     async def start(self) -> None:

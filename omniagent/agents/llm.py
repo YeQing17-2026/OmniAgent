@@ -878,8 +878,8 @@ class GoogleGeminiLLMProvider(LLMProvider):
                 logger.info("gemini_client_initialized", model=self.model)
             except ImportError:
                 raise RuntimeError(
-                    "google-generativeai package is required for Gemini provider. "
-                    "Install it with: pip install google-generativeai"
+                    "google-generativeai is missing from the current OmniAgent environment. "
+                    "Reinstall OmniAgent to restore bundled runtime dependencies."
                 )
 
     def _convert_messages(self, messages: List[LLMMessage]) -> tuple:
