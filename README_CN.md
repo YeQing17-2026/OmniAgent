@@ -91,7 +91,7 @@
 `curl:`
 
 ```bash
-$ curl -fsSL https://raw.githubusercontent.com/YoungCan-Wang/OmniAgent/main/install.sh | bash
+$ curl -fsSL https://raw.githubusercontent.com/YeQing17-2026/OmniAgent/main/install.sh | bash
 $ omniagent onboard
 $ omniagent chat                    # CLI
 $ omniagent serve                   # Web UI → http://127.0.0.1:18790

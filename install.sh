@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO="${OMNIAGENT_REPO:-YoungCan-Wang/OmniAgent}"
+REPO="${OMNIAGENT_REPO:-YeQing17-2026/OmniAgent}"
 REF="${OMNIAGENT_REF:-main}"
 INSTALL_BASE="${OMNIAGENT_INSTALL_DIR:-$HOME/.local/share/omniagent}"
 BIN_DIR="${OMNIAGENT_BIN_DIR:-$HOME/.local/bin}"
