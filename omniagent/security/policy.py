@@ -30,7 +30,7 @@ TOOL_GROUPS = {
     "fs": ["read_file", "write_file", "edit_file"],
     "search": ["grep", "find", "ls", "diff"],
     "runtime": ["bash"],
-    "web": ["web_search", "web_fetch"],
+    "web": ["web_search", "web_fetch", "exa_search"],
     "json": ["load_json", "save_json"],
     "process": ["process_list", "process_kill"],
     "memory": ["memory_search", "memory_get"],

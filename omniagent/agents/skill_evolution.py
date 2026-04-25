@@ -336,7 +336,7 @@ class PatternAnalyzer:
     _TOOL_NAME_MAP = {
         "read_file": "read", "write_file": "write", "edit_file": "edit",
         "bash": "shell", "grep": "search", "find": "locate",
-        "web_search": "websearch", "web_fetch": "fetch",
+        "web_search": "websearch", "web_fetch": "fetch", "exa_search": "exa",
         "diff": "diff", "load_json": "json", "save_json": "json-save",
         "ls": "list", "memory_search": "recall",
     }
