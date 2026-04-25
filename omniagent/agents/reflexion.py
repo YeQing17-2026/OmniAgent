@@ -15,7 +15,7 @@ from omniagent.infra import get_logger
 from omniagent.tools import (
     Tool, ToolRegistry, ReadTool, WriteTool, EditTool, BashTool,
     LoadJSONTool, SaveJSONTool, ProcessListTool, ProcessKillTool,
-    WebSearchTool, WebFetchTool,
+    WebSearchTool, WebFetchTool, ExaSearchTool,
 )
 from omniagent.tools.grep_tool import GrepTool
 from omniagent.tools.find_tool import FindTool
@@ -348,6 +348,7 @@ class ReflexionAgent(Agent):
         # Web tools
         self.registry.register(WebSearchTool())
         self.registry.register(WebFetchTool())
+        self.registry.register(ExaSearchTool())
 
         # Search/navigation tools
         self.registry.register(GrepTool(work_dir=self.work_dir))
