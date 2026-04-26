@@ -635,7 +635,7 @@ class UsageTrackingLLMProvider:
             stream=stream,
             tools=tools,
         )
-        response.metadata.setdefault("provider", self.default_provider)
+        response.metadata["provider"] = self.default_provider
         response.metadata.setdefault("model", self.default_model)
         self.recorder.record_response(
             response,

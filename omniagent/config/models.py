@@ -46,6 +46,10 @@ class ProviderConfig(BaseModel):
         default=None,
         description="Default model ID for this provider"
     )
+    provider_name: Optional[str] = Field(
+        default=None,
+        description="Provider name used for usage accounting/pricing; defaults to the selected provider"
+    )
 
 
 class AgentConfig(BaseModel):

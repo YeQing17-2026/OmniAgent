@@ -72,21 +72,25 @@ class ReflexionAgent(Agent):
         self.enable_security = enable_security
         self.approval_callback = approval_callback
 
+        provider_name = config.agent.model_provider
+        provider_cfg = config.providers.get(provider_name) if config.providers else None
+        usage_provider_name = config.agent.model_provider
+        provider_model = config.agent.model_id
+        if provider_cfg:
+            if provider_cfg.provider_name:
+                usage_provider_name = provider_cfg.provider_name
+            if provider_cfg.model_id:
+                provider_model = provider_cfg.model_id
+
         # Create LLM provider
         if llm_provider is None:
             # Resolve provider-specific overrides
-            provider_name = config.agent.model_provider
-            provider_cfg = config.providers.get(provider_name) if config.providers else None
-
             provider_api_url = config.agent.api_url
-            provider_model = config.agent.model_id
             provider_api_key = ""
 
             if provider_cfg:
                 if provider_cfg.api_url:
                     provider_api_url = provider_cfg.api_url
-                if provider_cfg.model_id:
-                    provider_model = provider_cfg.model_id
                 provider_api_key = provider_cfg.api_key or ""
 
             # Fallback to top-level api_key
@@ -103,12 +107,14 @@ class ReflexionAgent(Agent):
                 api_url=provider_api_url,
             )
 
+        self.usage_provider_name = usage_provider_name
+        self.usage_model_id = provider_model
         self.usage_recorder = UsageRecorder(self.work_dir / ".omniagent" / "usage.db")
         self.llm = cast(LLMProvider, UsageTrackingLLMProvider(
             llm_provider,
             recorder=self.usage_recorder,
-            default_provider=config.agent.model_provider,
-            default_model=config.agent.model_id,
+            default_provider=self.usage_provider_name,
+            default_model=self.usage_model_id,
         ))
 
         # Agent subsystems
@@ -442,8 +448,8 @@ class ReflexionAgent(Agent):
                 "session_id": message.session_id,
                 "user_id": message.user_id,
                 "channel_id": message.channel_id,
-                "provider": self.config.agent.model_provider,
-                "model_id": self.config.agent.model_id,
+                "provider": self.usage_provider_name,
+                "model_id": self.usage_model_id,
                 "source_component": "agent",
             },
         )
@@ -479,8 +485,8 @@ class ReflexionAgent(Agent):
         logger.info("executing_task", task=task)
 
         usage_context = {
-            "provider": self.config.agent.model_provider,
-            "model_id": self.config.agent.model_id,
+            "provider": self.usage_provider_name,
+            "model_id": self.usage_model_id,
             "source_component": "agent",
         }
         if context:
