@@ -43,15 +43,37 @@ from .hooks import ToolHookManager, ToolCallContext
 logger = get_logger(__name__)
 
 
-def _resolve_active_model(config: OmniAgentConfig, provider_cfg: Any) -> str:
+def _agent_model_is_explicit(config: OmniAgentConfig) -> bool:
+    """Return whether agent.model_id came from user config/API rather than fallback."""
+    agent_model = str(config.agent.model_id or "").strip()
+    agent_fields_set = getattr(config.agent, "model_fields_set", set())
+    return bool(agent_model) and "model_id" in agent_fields_set
+
+
+def _mark_agent_model_implicit(config: OmniAgentConfig) -> None:
+    fields_set = getattr(config.agent, "model_fields_set", None)
+    if hasattr(fields_set, "discard"):
+        fields_set.discard("model_id")
+    pydantic_fields_set = getattr(config.agent, "__pydantic_fields_set__", None)
+    if hasattr(pydantic_fields_set, "discard"):
+        pydantic_fields_set.discard("model_id")
+
+
+def _set_effective_agent_model(config: OmniAgentConfig, model_id: str, explicit: bool) -> None:
+    """Expose the effective model without turning provider fallback into an explicit override."""
+    config.agent.model_id = model_id
+    if not explicit:
+        _mark_agent_model_implicit(config)
+
+
+def _resolve_active_model(config: OmniAgentConfig, provider_cfg: Any) -> tuple[str, bool]:
     """Resolve active model with agent.model_id overriding provider defaults."""
     provider_model = getattr(provider_cfg, "model_id", None) if provider_cfg else None
     agent_model = config.agent.model_id
-    agent_fields_set = getattr(config.agent, "model_fields_set", set())
-    if agent_model and ("model_id" in agent_fields_set or not provider_model):
-        return agent_model
-    return provider_model or agent_model
-
+    explicit = _agent_model_is_explicit(config)
+    if agent_model and (explicit or not provider_model):
+        return agent_model, explicit
+    return provider_model or agent_model, False
 
 class ReflexionAgent(Agent):
     """AI Agent with native function calling support."""
@@ -86,12 +108,12 @@ class ReflexionAgent(Agent):
         provider_cfg = config.providers.get(provider_key) if config.providers else None
         provider_api_type = provider_cfg.api_type if provider_cfg and provider_cfg.api_type else provider_key
         usage_provider_key = provider_key
-        provider_model = _resolve_active_model(config, provider_cfg)
+        provider_model, explicit_model = _resolve_active_model(config, provider_cfg)
 
         # Create LLM provider
         if llm_provider is None:
             llm_provider, usage_provider_key, provider_model, provider_api_type = self._build_llm_from_config(config)
-        config.agent.model_id = provider_model
+        _set_effective_agent_model(config, provider_model, explicit_model)
 
         self.active_api_type = provider_api_type
         self.usage_provider_key = usage_provider_key
@@ -324,8 +346,8 @@ class ReflexionAgent(Agent):
         provider_cfg = config.providers.get(provider_key) if config.providers else None
         provider_api_type = provider_cfg.api_type if provider_cfg and provider_cfg.api_type else provider_key
         usage_provider_key = provider_key
-        provider_model = _resolve_active_model(config, provider_cfg)
-        config.agent.model_id = provider_model
+        provider_model, explicit_model = _resolve_active_model(config, provider_cfg)
+        _set_effective_agent_model(config, provider_model, explicit_model)
 
         provider_api_url = config.agent.api_url or ""
         provider_api_key = ""

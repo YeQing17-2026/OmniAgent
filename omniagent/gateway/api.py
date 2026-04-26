@@ -122,11 +122,53 @@ def _restore_sensitive_for_save(data: dict, raw_config: Optional[dict]) -> None:
             provider_data["api_key"] = None
 
 
+def _agent_model_is_explicit(config: OmniAgentConfig) -> bool:
+    agent_model = str(config.agent.model_id or "").strip()
+    agent_fields_set = getattr(config.agent, "model_fields_set", set())
+    return bool(agent_model) and "model_id" in agent_fields_set
+
+
+def _effective_agent_model_id(config: OmniAgentConfig, runtime_agent=None) -> str:
+    if _agent_model_is_explicit(config):
+        return config.agent.model_id
+    usage_model_id = getattr(runtime_agent, "usage_model_id", None)
+    if usage_model_id:
+        return str(usage_model_id)
+    provider_cfg = config.providers.get(config.agent.model_provider) if config.providers else None
+    provider_model = getattr(provider_cfg, "model_id", None) if provider_cfg else None
+    return str(provider_model or config.agent.model_id)
+
+
+def _config_response_data(config: OmniAgentConfig, runtime_agent=None) -> dict:
+    data = config.model_dump(mode="json")
+    agent_data = data.setdefault("agent", {})
+    if isinstance(agent_data, dict):
+        agent_data["model_id"] = _effective_agent_model_id(config, runtime_agent)
+    _mask_sensitive_fields(data)
+    return data
+
+
+def _drop_implicit_agent_model(data: dict, config: OmniAgentConfig) -> None:
+    if _agent_model_is_explicit(config):
+        return
+    agent_data = data.get("agent")
+    if isinstance(agent_data, dict):
+        agent_data.pop("model_id", None)
+
+
+def _preserve_implicit_agent_model(current: dict, updates: dict, config: OmniAgentConfig) -> dict:
+    if _agent_model_is_explicit(config):
+        return updates
+    _drop_implicit_agent_model(current, config)
+    return updates
+
+
 def _save_config_preserving_sensitive(config: OmniAgentConfig, config_path: Optional[Path]) -> None:
     """Save config while keeping env-resolved secrets out of the file."""
     path = config_path or DEFAULT_CONFIG_PATH
     raw_config = _load_raw_config_for_preserve(path)
     data = config.model_dump(mode="json")
+    _drop_implicit_agent_model(data, config)
     _restore_sensitive_for_save(data, raw_config)
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,9 +206,7 @@ async def get_config(request: web.Request) -> web.Response:
     if ctx.config is None:
         return web.json_response({"error": "Config not loaded"}, status=503)
 
-    data = ctx.config.model_dump(mode="json")
-    _mask_sensitive_fields(data)
-    return web.json_response(data)
+    return web.json_response(_config_response_data(ctx.config, ctx.agent))
 
 
 async def update_config(request: web.Request) -> web.Response:
@@ -195,6 +235,7 @@ async def update_config(request: web.Request) -> web.Response:
     # whole when provided; otherwise removing a rate in the UI would leave stale
     # nested keys behind from the old saved config.
     current = ctx.config.model_dump(mode="json")
+    updates = _preserve_implicit_agent_model(current, updates, ctx.config)
     usage_updates = updates.get("usage")
     if isinstance(usage_updates, dict) and isinstance(usage_updates.get("pricing_overrides"), dict):
         current_usage = current.get("usage")
@@ -248,8 +289,7 @@ async def update_config(request: web.Request) -> web.Response:
     # Update in-memory after both validation and runtime application succeed.
     ctx.config = new_config
 
-    result = new_config.model_dump(mode="json")
-    _mask_sensitive_fields(result)
+    result = _config_response_data(new_config, ctx.agent)
     response = {
         "status": "updated" if persisted else "updated_runtime_only",
         "persisted": persisted,

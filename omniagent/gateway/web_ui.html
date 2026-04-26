@@ -1135,7 +1135,7 @@ const PRICING_INPUT_IDS = {
 function getActivePricingIdentity(config) {
   const providerName = config?.agent?.model_provider || '';
   const provider = (config?.providers || {})[providerName] || {};
-  const modelId = config?.agent?.model_id || provider.model_id || '';
+  const modelId = config?.agent?.model_id || '';
   return {
     providerName,
     apiType: provider.api_type || providerName,
@@ -1529,7 +1529,7 @@ const panels = {
           const isActive = name === activeProvider;
           const apiKeyState = p.api_key ? 'configured (masked)' : 'not set';
           const apiUrl = p.api_url || '(default)';
-          const activeModelId = c.agent?.model_id || p.model_id || '';
+          const activeModelId = c.agent?.model_id || '';
           const providerModelId = p.model_id || '';
           const modelId = (isActive ? activeModelId : providerModelId) || '(not set)';
           const modelLabel = isActive ? 'Active Model ID' : 'Default Model ID';
@@ -1613,15 +1613,20 @@ const panels = {
         return;
       }
       const usage = { ...((this._raw && this._raw.usage) || {}), pricing_overrides: pricingOverrides };
+      const currentModelId = this._raw?.agent?.model_id || '';
+      const nextModelId = document.getElementById('cfg-model-id').value || '';
+      const agentUpdates = {
+        model_provider: document.getElementById('cfg-model-provider').value || undefined,
+        temperature: parseFloat(document.getElementById('cfg-temperature').value),
+        max_tokens: parseInt(document.getElementById('cfg-max-tokens').value) || undefined,
+        max_iterations: parseInt(document.getElementById('cfg-max-iterations').value) || undefined,
+        reflexion_enabled: document.getElementById('cfg-reflexion').classList.contains('active'),
+      };
+      if (nextModelId !== currentModelId) {
+        agentUpdates.model_id = nextModelId;
+      }
       const updates = {
-        agent: {
-          model_provider: document.getElementById('cfg-model-provider').value || undefined,
-          model_id: document.getElementById('cfg-model-id').value || undefined,
-          temperature: parseFloat(document.getElementById('cfg-temperature').value),
-          max_tokens: parseInt(document.getElementById('cfg-max-tokens').value) || undefined,
-          max_iterations: parseInt(document.getElementById('cfg-max-iterations').value) || undefined,
-          reflexion_enabled: document.getElementById('cfg-reflexion').classList.contains('active'),
-        },
+        agent: agentUpdates,
         tools: { profile: document.getElementById('cfg-tool-profile').value },
         enable_progressive_loading: document.getElementById('cfg-progressive-loading').classList.contains('active'),
         enable_parallel_execution: document.getElementById('cfg-parallel-exec').classList.contains('active'),
@@ -1651,7 +1656,7 @@ const panels = {
         } else {
           showToast('Settings saved', 'success');
         }
-        if (r.data?.config) this._raw = r.data.config;
+        if (r.data?.config) { this._raw = r.data.config; this.loadConfig(); }
       } else {
         showToast(r.data.error || 'Save failed', 'error');
       }

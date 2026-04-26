@@ -884,11 +884,6 @@ class OmniAgentConfig(BaseModel):
                 agent_data["model_provider"] = target_key
 
         if agent_data:
-            active_key = str(agent_data.get("model_provider") or "deepseek").strip()
-            active_provider = normalized_providers.get(active_key)
-            has_agent_model = str(agent_data.get("model_id") or "").strip()
-            if not has_agent_model and isinstance(active_provider, dict) and active_provider.get("model_id"):
-                agent_data["model_id"] = active_provider["model_id"]
             data["agent"] = agent_data
         data["providers"] = normalized_providers
         cls._validate_active_provider_key(data, normalized_providers)
