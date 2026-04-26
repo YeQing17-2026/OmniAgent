@@ -276,6 +276,14 @@ def onboard(ctx: click.Context) -> None:
             "host": config_obj.gateway.host,
             "port": config_obj.gateway.port,
             "session_timeout": config_obj.gateway.session_timeout,
+            "usage_summary_max_days": config_obj.gateway.usage_summary_max_days,
+        },
+        "usage": {
+            "pricing_catalog_enabled": config_obj.usage.pricing_catalog_enabled,
+            "pricing_catalog_url": config_obj.usage.pricing_catalog_url,
+            "pricing_cache_ttl_seconds": config_obj.usage.pricing_cache_ttl_seconds,
+            "pricing_request_timeout_seconds": config_obj.usage.pricing_request_timeout_seconds,
+            "pricing_overrides": config_obj.usage.pricing_overrides,
         },
         "tools": {
             "profile": config_obj.tools.profile,

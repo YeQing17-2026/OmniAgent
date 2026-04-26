@@ -274,7 +274,7 @@ class DeepSeekLLMProvider(LLMProvider):
                     content=self.strip_thinking(content),
                     finish_reason=finish_reason,
                     usage=usage,
-                    metadata={"model": self.model},
+                    metadata={"model": self.model, "provider": "deepseek"},
                     tool_calls=tool_calls,
                 )
 
@@ -481,10 +481,25 @@ class OpenAILLMProvider(LLMProvider):
 
             usage = {}
             if response.usage:
+                prompt_tokens = response.usage.prompt_tokens or 0
+                completion_tokens = response.usage.completion_tokens or 0
+                prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+                cached_tokens = 0
+                if prompt_details:
+                    if isinstance(prompt_details, dict):
+                        cached_tokens = prompt_details.get("cached_tokens", 0) or 0
+                    else:
+                        cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
                 usage = {
-                    "prompt_tokens": response.usage.prompt_tokens or 0,
-                    "completion_tokens": response.usage.completion_tokens or 0,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
                     "total_tokens": response.usage.total_tokens or 0,
+                    "input_tokens": prompt_tokens,
+                    "input_tokens_uncached": max(prompt_tokens - cached_tokens, 0),
+                    "cached_tokens": cached_tokens,
+                    "cached_input_tokens": cached_tokens,
+                    "cache_read_input_tokens": cached_tokens,
+                    "output_tokens": completion_tokens,
                 }
 
             logger.info(
@@ -707,10 +722,20 @@ class AnthropicLLMProvider(LLMProvider):
 
             usage = {}
             if response.usage:
+                input_tokens = response.usage.input_tokens or 0
+                output_tokens = response.usage.output_tokens or 0
+                cache_creation_tokens = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+                cache_read_tokens = getattr(response.usage, "cache_read_input_tokens", 0) or 0
                 usage = {
-                    "prompt_tokens": response.usage.input_tokens or 0,
-                    "completion_tokens": response.usage.output_tokens or 0,
-                    "total_tokens": (response.usage.input_tokens or 0) + (response.usage.output_tokens or 0),
+                    "prompt_tokens": input_tokens,
+                    "completion_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens,
+                    "input_tokens": input_tokens,
+                    "input_tokens_uncached": input_tokens,
+                    "cache_creation_input_tokens": cache_creation_tokens,
+                    "cache_read_input_tokens": cache_read_tokens,
+                    "cached_input_tokens": cache_read_tokens,
+                    "output_tokens": output_tokens,
                 }
 
             logger.info(
@@ -847,7 +872,7 @@ class OllamaLLMProvider(LLMProvider):
                     usage = data.get("usage", {})
                     tool_calls = message.get("tool_calls")
                     logger.info("ollama_response", content_length=len(content), finish_reason=finish_reason, has_tool_calls=tool_calls is not None, usage=usage)
-                    return LLMResponse(content=content, finish_reason=finish_reason, usage=usage, metadata={"model": self.model}, tool_calls=tool_calls)
+                    return LLMResponse(content=content, finish_reason=finish_reason, usage=usage, metadata={"model": self.model, "provider": "ollama"}, tool_calls=tool_calls)
         except aiohttp.ClientConnectorError:
             raise RuntimeError(f"Ollama not reachable at {self.api_url}. Make sure Ollama is running.")
 
@@ -947,12 +972,21 @@ class GoogleGeminiLLMProvider(LLMProvider):
                         }]
             usage = {}
             if response.usage_metadata:
+                prompt_tokens = response.usage_metadata.prompt_token_count or 0
+                completion_tokens = response.usage_metadata.candidates_token_count or 0
+                cached_tokens = getattr(response.usage_metadata, "cached_content_token_count", 0) or 0
                 usage = {
-                    "prompt_tokens": response.usage_metadata.prompt_token_count or 0,
-                    "completion_tokens": response.usage_metadata.candidates_token_count or 0,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
                     "total_tokens": response.usage_metadata.total_token_count or 0,
+                    "input_tokens": prompt_tokens,
+                    "input_tokens_uncached": max(prompt_tokens - cached_tokens, 0),
+                    "cached_tokens": cached_tokens,
+                    "cached_input_tokens": cached_tokens,
+                    "cache_read_input_tokens": cached_tokens,
+                    "output_tokens": completion_tokens,
                 }
-            return LLMResponse(content=content, finish_reason="stop", usage=usage, metadata={"model": self.model}, tool_calls=tool_calls)
+            return LLMResponse(content=content, finish_reason="stop", usage=usage, metadata={"model": self.model, "provider": "gemini"}, tool_calls=tool_calls)
         except Exception as e:
             logger.error("gemini_error", error=str(e))
             raise RuntimeError(f"Gemini request failed: {e}")
@@ -1055,10 +1089,25 @@ class LocalInferenceLLMProvider(OpenAILLMProvider):
 
             usage = {}
             if response.usage:
+                prompt_tokens = response.usage.prompt_tokens or 0
+                completion_tokens = response.usage.completion_tokens or 0
+                prompt_details = getattr(response.usage, "prompt_tokens_details", None)
+                cached_tokens = 0
+                if prompt_details:
+                    if isinstance(prompt_details, dict):
+                        cached_tokens = prompt_details.get("cached_tokens", 0) or 0
+                    else:
+                        cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
                 usage = {
-                    "prompt_tokens": response.usage.prompt_tokens or 0,
-                    "completion_tokens": response.usage.completion_tokens or 0,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
                     "total_tokens": response.usage.total_tokens or 0,
+                    "input_tokens": prompt_tokens,
+                    "input_tokens_uncached": max(prompt_tokens - cached_tokens, 0),
+                    "cached_tokens": cached_tokens,
+                    "cached_input_tokens": cached_tokens,
+                    "cache_read_input_tokens": cached_tokens,
+                    "output_tokens": completion_tokens,
                 }
 
             # Extract per-token logprobs

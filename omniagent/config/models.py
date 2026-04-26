@@ -210,6 +210,40 @@ class GatewayConfig(BaseModel):
         gt=0,
         description="Session timeout in seconds"
     )
+    usage_summary_max_days: int = Field(
+        default=365,
+        ge=1,
+        description="Maximum days accepted by /api/usage/summary"
+    )
+
+
+class UsageConfig(BaseModel):
+    """Usage accounting configuration."""
+
+    model_config = ConfigDict(extra="allow")
+
+    pricing_catalog_enabled: bool = Field(
+        default=True,
+        description="Use the default model pricing catalog for usage cost estimates"
+    )
+    pricing_catalog_url: str = Field(
+        default="https://models.dev/api.json",
+        description="Default model pricing catalog URL"
+    )
+    pricing_cache_ttl_seconds: int = Field(
+        default=900,
+        ge=0,
+        description="Seconds to cache fetched model pricing data"
+    )
+    pricing_request_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        description="Timeout for fetching default model pricing data"
+    )
+    pricing_overrides: Dict[str, Dict[str, float]] = Field(
+        default_factory=dict,
+        description="Manual pricing overrides keyed by 'provider/model_id' or model_id; values are USD per million tokens"
+    )
 
 
 class ChannelsConfig(BaseModel):
@@ -645,6 +679,11 @@ class OmniAgentConfig(BaseModel):
     gateway: GatewayConfig = Field(
         default_factory=GatewayConfig,
         description="Gateway configuration"
+    )
+
+    usage: UsageConfig = Field(
+        default_factory=UsageConfig,
+        description="Usage accounting configuration"
     )
 
     # Feature flags

@@ -7,11 +7,12 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from omniagent.config import OmniAgentConfig
 from omniagent.gateway.router import IncomingMessage, OutgoingMessage
 from omniagent.infra import get_logger
+from .usage import UsageRecorder, UsageTrackingLLMProvider
 from omniagent.tools import (
     Tool, ToolRegistry, ReadTool, WriteTool, EditTool, BashTool,
     LoadJSONTool, SaveJSONTool, ProcessListTool, ProcessKillTool,
@@ -25,7 +26,7 @@ from omniagent.tools.http_tool import HttpTool
 from omniagent.security import ApprovalManager, ApprovalStatus, AuditLogger, ToolPolicy
 from omniagent.security.policy import ToolProfile, PolicyRule, PolicyDecision
 from .agent import Agent, AgentResult
-from .llm import LLMProvider, LLMMessage, create_llm_provider
+from .llm import LLMProvider, LLMMessage, LLMResponse, create_llm_provider
 from .context_manager import (
     ContextManager, resolve_context_window_size, detect_context_overflow,
 )
@@ -102,7 +103,13 @@ class ReflexionAgent(Agent):
                 api_url=provider_api_url,
             )
 
-        self.llm = llm_provider
+        self.usage_recorder = UsageRecorder(self.work_dir / ".omniagent" / "usage.db")
+        self.llm = cast(LLMProvider, UsageTrackingLLMProvider(
+            llm_provider,
+            recorder=self.usage_recorder,
+            default_provider=config.agent.model_provider,
+            default_model=config.agent.model_id,
+        ))
 
         # Agent subsystems
         self.event_bus = EventBus()
@@ -429,7 +436,17 @@ class ReflexionAgent(Agent):
                 logger.warning("memory_sync_failed", error=str(e))
 
         # Execute task
-        result = await self.execute(message.content)
+        result = await self.execute(
+            message.content,
+            context={
+                "session_id": message.session_id,
+                "user_id": message.user_id,
+                "channel_id": message.channel_id,
+                "provider": self.config.agent.model_provider,
+                "model_id": self.config.agent.model_id,
+                "source_component": "agent",
+            },
+        )
 
         # Create response
         return OutgoingMessage(
@@ -461,187 +478,208 @@ class ReflexionAgent(Agent):
         """
         logger.info("executing_task", task=task)
 
-        # Reset per-execution state
-        self._guardian_blocked_events = []
-        self._parallel_exec_count = 0
-        self._parallel_tools_count = 0
-        self._compaction_count = 0
-        self._stuck_detected_count = 0
-        self._sentinel_activated = False
-        self._tool_name_history = []
-        self._result_hashes = []
+        usage_context = {
+            "provider": self.config.agent.model_provider,
+            "model_id": self.config.agent.model_id,
+            "source_component": "agent",
+        }
+        if context:
+            usage_context.update(context)
+        usage_context_token = None
+        set_usage_context = getattr(self.llm, "set_usage_context", None)
+        if callable(set_usage_context):
+            usage_context_token = set_usage_context(usage_context)
 
-        # ── Feedback Detection ──────────────────────────────────────
-        # If the user's message looks like feedback on a prior execution
-        # (corrections, preferences, "don't do X, do Y"), route it through
-        # the lesson extraction pipeline before executing as a new task.
-        self._pending_user_feedback: Optional[List[str]] = None
-        if self._context_evolution and self.conversation_history:
-            feedback_result = await self._detect_user_feedback(task)
-            if feedback_result:
-                self._pending_user_feedback = [feedback_result]
-                logger.info(
-                    "user_feedback_detected",
-                    feedback=feedback_result[:100],
-                )
+        def _reset_usage_context() -> None:
+            reset_usage_context = getattr(self.llm, "reset_usage_context", None)
+            if usage_context_token is not None and callable(reset_usage_context):
+                reset_usage_context(usage_context_token)
 
-        # Sentinel: check if task is complex enough to activate planning
-        # Pass skills_summary so Sentinel can make skill-aware decisions
-        sentinel_plan = None
-        skills_summary = self.skill_manager.format_skills_summary()
-        if self._sentinel:
-            # Try to recover existing plan first
-            sentinel_plan = self._sentinel.load_plan(task)
-            if not sentinel_plan:
-                should_activate, reason = await self._sentinel.should_activate_with_llm(
-                    task, self.llm,
-                    skills_summary=skills_summary,
-                )
-                if should_activate:
-                    self._sentinel_activated = True
-                    logger.info("sentinel_activating", reason=reason)
-                    try:
-                        sentinel_plan = await self._sentinel.decompose(
-                            task, self.llm,
-                            skills_summary=skills_summary,
-                        )
-                        # Inject plan context into conversation
-                        plan_text = self._sentinel.get_progress_summary()
-                        if plan_text:
-                            self._steering_queue.append(
-                                f"[Sentinel Plan] Complex task detected. "
-                                f"Working through the following milestone plan:\n{plan_text}\n"
-                                f"Execute the milestones in order. Mark each as complete before moving on."
-                            )
-                    except Exception as e:
-                        logger.warning("sentinel_decompose_failed", error=str(e))
-            else:
-                # Recovered plan — inject progress context
-                plan_text = self._sentinel.get_progress_summary()
-                if plan_text:
-                    self._steering_queue.append(
-                        f"[Sentinel Plan Recovery] Resuming previous task plan:\n{plan_text}\n"
-                        f"Continue from where you left off."
-                    )
-        self._sentinel_plan = sentinel_plan
-
-        # First attempt
-        result = await self._execute_single_attempt(task)
-
-        if result.success or not self.config.agent.reflexion_enabled:
-            # Sentinel: mark milestone completed on success
-            if self._sentinel and self._sentinel.is_active:
-                try:
-                    ms = self._sentinel.get_current_milestone()
-                    if ms:
-                        await self._sentinel.mark_milestone_completed(
-                            ms, result_summary=result.response[:200]
-                        )
-                except Exception as e:
-                    logger.warning("sentinel_milestone_complete_failed", error=str(e))
-            return result
-
-        # Reflexion retry loop
-        max_retries = self.config.agent.reflexion_max_attempts
-        for retry in range(max_retries):
-            # Sentinel: activate planning on repeated reflexion failures
-            if self._sentinel and not self._sentinel_activated:
-                should, reason = self._sentinel.should_activate(
-                    task, reflexion_failure_count=retry + 1
-                )
-                if should:
-                    self._sentinel_activated = True
-                    logger.info("sentinel_activating_on_reflexion", reason=reason, attempt=retry + 1)
-                    try:
-                        self._sentinel_plan = await self._sentinel.decompose(task, self.llm)
-                        plan_text = self._sentinel.get_progress_summary()
-                        if plan_text:
-                            self._steering_queue.append(
-                                f"[Sentinel Plan] Activated due to repeated failures. "
-                                f"Working through the following milestone plan:\n{plan_text}\n"
-                                f"Execute the milestones in order. Mark each as complete before moving on."
-                            )
-                    except Exception as e:
-                        logger.warning("sentinel_decompose_on_reflexion_failed", error=str(e))
-
-            logger.info(
-                "reflexion_retry",
-                attempt=retry + 1,
-                max_retries=max_retries,
-                error=result.error or "max_iterations",
-            )
-
-            # Generate reflection on what went wrong
-            reflection = await self._reflect(task, result)
-            if reflection:
-                self._reflections.append(reflection)
-                logger.info("reflection_generated", length=len(reflection))
-
-            # Extract key discoveries before clearing conversation
-            self._discoveries = self._extract_discoveries()
-            if self._discoveries:
-                logger.info("discoveries_extracted", files=self._discoveries.count("\n") + 1)
-
-            # Reset conversation for fresh attempt, keeping reflections and discoveries
-            self.conversation_history = []
-            self._recent_tool_calls = []
-            self._recent_errors = []
+        try:
+            # Reset per-execution state
+            self._guardian_blocked_events = []
+            self._parallel_exec_count = 0
+            self._parallel_tools_count = 0
+            self._compaction_count = 0
+            self._stuck_detected_count = 0
+            self._sentinel_activated = False
             self._tool_name_history = []
             self._result_hashes = []
-            # Keep _context_hints, _reflections, and _discoveries across retries
 
-            # Retry with reflection injected into system prompt
+            # ── Feedback Detection ──────────────────────────────────────
+            # If the user's message looks like feedback on a prior execution
+            # (corrections, preferences, "don't do X, do Y"), route it through
+            # the lesson extraction pipeline before executing as a new task.
+            self._pending_user_feedback: Optional[List[str]] = None
+            if self._context_evolution and self.conversation_history:
+                feedback_result = await self._detect_user_feedback(task)
+                if feedback_result:
+                    self._pending_user_feedback = [feedback_result]
+                    logger.info(
+                        "user_feedback_detected",
+                        feedback=feedback_result[:100],
+                    )
+
+            # Sentinel: check if task is complex enough to activate planning
+            # Pass skills_summary so Sentinel can make skill-aware decisions
+            sentinel_plan = None
+            skills_summary = self.skill_manager.format_skills_summary()
+            if self._sentinel:
+                # Try to recover existing plan first
+                sentinel_plan = self._sentinel.load_plan(task)
+                if not sentinel_plan:
+                    should_activate, reason = await self._sentinel.should_activate_with_llm(
+                        task, self.llm,
+                        skills_summary=skills_summary,
+                    )
+                    if should_activate:
+                        self._sentinel_activated = True
+                        logger.info("sentinel_activating", reason=reason)
+                        try:
+                            sentinel_plan = await self._sentinel.decompose(
+                                task, self.llm,
+                                skills_summary=skills_summary,
+                            )
+                            # Inject plan context into conversation
+                            plan_text = self._sentinel.get_progress_summary()
+                            if plan_text:
+                                self._steering_queue.append(
+                                    f"[Sentinel Plan] Complex task detected. "
+                                    f"Working through the following milestone plan:\n{plan_text}\n"
+                                    f"Execute the milestones in order. Mark each as complete before moving on."
+                                )
+                        except Exception as e:
+                            logger.warning("sentinel_decompose_failed", error=str(e))
+                else:
+                    # Recovered plan — inject progress context
+                    plan_text = self._sentinel.get_progress_summary()
+                    if plan_text:
+                        self._steering_queue.append(
+                            f"[Sentinel Plan Recovery] Resuming previous task plan:\n{plan_text}\n"
+                            f"Continue from where you left off."
+                        )
+            self._sentinel_plan = sentinel_plan
+
+            # First attempt
             result = await self._execute_single_attempt(task)
-            if result.success:
-                logger.info("reflexion_succeeded", attempt=retry + 1)
-                break
 
-        result.metadata["reflections_count"] = len(self._reflections)
+            if result.success or not self.config.agent.reflexion_enabled:
+                # Sentinel: mark milestone completed on success
+                if self._sentinel and self._sentinel.is_active:
+                    try:
+                        ms = self._sentinel.get_current_milestone()
+                        if ms:
+                            await self._sentinel.mark_milestone_completed(
+                                ms, result_summary=result.response[:200]
+                            )
+                    except Exception as e:
+                        logger.warning("sentinel_milestone_complete_failed", error=str(e))
+                return result
 
-        # ── Collect execution highlights ──
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        highlights = []
+            # Reflexion retry loop
+            max_retries = self.config.agent.reflexion_max_attempts
+            for retry in range(max_retries):
+                # Sentinel: activate planning on repeated reflexion failures
+                if self._sentinel and not self._sentinel_activated:
+                    should, reason = self._sentinel.should_activate(
+                        task, reflexion_failure_count=retry + 1
+                    )
+                    if should:
+                        self._sentinel_activated = True
+                        logger.info("sentinel_activating_on_reflexion", reason=reason, attempt=retry + 1)
+                        try:
+                            self._sentinel_plan = await self._sentinel.decompose(task, self.llm)
+                            plan_text = self._sentinel.get_progress_summary()
+                            if plan_text:
+                                self._steering_queue.append(
+                                    f"[Sentinel Plan] Activated due to repeated failures. "
+                                    f"Working through the following milestone plan:\n{plan_text}\n"
+                                    f"Execute the milestones in order. Mark each as complete before moving on."
+                                )
+                        except Exception as e:
+                            logger.warning("sentinel_decompose_on_reflexion_failed", error=str(e))
 
-        # Reflections
-        if self._reflections:
-            highlights.append({"type": "reflections", "count": len(self._reflections), "time": now})
+                logger.info(
+                    "reflexion_retry",
+                    attempt=retry + 1,
+                    max_retries=max_retries,
+                    error=result.error or "max_iterations",
+                )
 
-        # Guardian session summary
-        if self._guardian:
-            summary = self._guardian.get_session_summary()
-            if summary:
-                highlights.append({"type": "guardian", "summary": summary, "time": now})
+                # Generate reflection on what went wrong
+                reflection = await self._reflect(task, result)
+                if reflection:
+                    self._reflections.append(reflection)
+                    logger.info("reflection_generated", length=len(reflection))
 
-        # Tool stats
-        tools_used = list(dict.fromkeys(self._tool_name_history))
-        if tools_used:
-            highlights.append({"type": "tools", "used": tools_used, "total_calls": self.agent_state.total_tool_calls, "time": now})
+                # Extract key discoveries before clearing conversation
+                self._discoveries = self._extract_discoveries()
+                if self._discoveries:
+                    logger.info("discoveries_extracted", files=self._discoveries.count("\n") + 1)
 
-        # Skill evolution highlights (time from AGENT_END handler)
-        if self._skill_evolution and self._skill_evolution.last_session_results:
-            sr = self._skill_evolution.last_session_results
-            ev_time = sr.get("time", now)
-            if sr.get("skill_compiled"):
-                highlights.append({"type": "skill_compiled", "time": ev_time})
-            if sr.get("patches_written"):
-                highlights.append({"type": "skill_evolution", "time": ev_time})
+                # Reset conversation for fresh attempt, keeping reflections and discoveries
+                self.conversation_history = []
+                self._recent_tool_calls = []
+                self._recent_errors = []
+                self._tool_name_history = []
+                self._result_hashes = []
+                # Keep _context_hints, _reflections, and _discoveries across retries
 
-        # Context evolution highlights (time from AGENT_END handler)
-        if self._context_evolution and self._context_evolution.last_session_results:
-            cr = self._context_evolution.last_session_results
-            ev_time = cr.get("time", now)
-            if cr.get("rules_promoted"):
-                highlights.append({"type": "rules_promoted", "count": cr["rules_promoted"], "time": ev_time})
-            if cr.get("lessons_extracted"):
-                highlights.append({"type": "lessons_extracted", "count": cr["lessons_extracted"], "time": ev_time})
+                # Retry with reflection injected into system prompt
+                result = await self._execute_single_attempt(task)
+                if result.success:
+                    logger.info("reflexion_succeeded", attempt=retry + 1)
+                    break
 
-        result.metadata["execution_highlights"] = highlights
+            result.metadata["reflections_count"] = len(self._reflections)
 
-        # Invalidate skill cache so trial skills become visible
-        if self._skill_evolution and self.skill_manager:
-            self.skill_manager.invalidate_cache()
+            # ── Collect execution highlights ──
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            highlights = []
 
-        return result
+            # Reflections
+            if self._reflections:
+                highlights.append({"type": "reflections", "count": len(self._reflections), "time": now})
+
+            # Guardian session summary
+            if self._guardian:
+                summary = self._guardian.get_session_summary()
+                if summary:
+                    highlights.append({"type": "guardian", "summary": summary, "time": now})
+
+            # Tool stats
+            tools_used = list(dict.fromkeys(self._tool_name_history))
+            if tools_used:
+                highlights.append({"type": "tools", "used": tools_used, "total_calls": self.agent_state.total_tool_calls, "time": now})
+
+            # Skill evolution highlights (time from AGENT_END handler)
+            if self._skill_evolution and self._skill_evolution.last_session_results:
+                sr = self._skill_evolution.last_session_results
+                ev_time = sr.get("time", now)
+                if sr.get("skill_compiled"):
+                    highlights.append({"type": "skill_compiled", "time": ev_time})
+                if sr.get("patches_written"):
+                    highlights.append({"type": "skill_evolution", "time": ev_time})
+
+            # Context evolution highlights (time from AGENT_END handler)
+            if self._context_evolution and self._context_evolution.last_session_results:
+                cr = self._context_evolution.last_session_results
+                ev_time = cr.get("time", now)
+                if cr.get("rules_promoted"):
+                    highlights.append({"type": "rules_promoted", "count": cr["rules_promoted"], "time": ev_time})
+                if cr.get("lessons_extracted"):
+                    highlights.append({"type": "lessons_extracted", "count": cr["lessons_extracted"], "time": ev_time})
+
+            result.metadata["execution_highlights"] = highlights
+
+            # Invalidate skill cache so trial skills become visible
+            if self._skill_evolution and self.skill_manager:
+                self.skill_manager.invalidate_cache()
+
+            return result
+
+        finally:
+            _reset_usage_context()
 
     async def _execute_single_attempt(
         self,
