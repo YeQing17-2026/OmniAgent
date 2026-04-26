@@ -549,6 +549,29 @@ body {
 .card .stat-row .stat-label { color: var(--text-secondary); }
 .card .stat-row .stat-value { color: var(--text-primary); font-weight: 500; }
 .usage-card { grid-column: 1 / -1; }
+.usage-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.usage-range-select,
+.usage-days-input {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.usage-days-input { width: 90px; }
+.usage-custom-days {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
 .usage-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1019,7 +1042,19 @@ body {
   <div id="panel-dashboard" class="panel">
     <div class="panel-header">
       <h2>Dashboard</h2>
-      <div class="panel-actions">
+      <div class="panel-actions usage-controls">
+        <select id="usage-range-select" class="usage-range-select" onchange="panels.dashboard.setUsageRange(this.value)">
+          <option value="today">Today</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="365">Last year</option>
+          <option value="custom">Custom days</option>
+        </select>
+        <span id="usage-custom-days" class="usage-custom-days">
+          <span>Last</span>
+          <input id="usage-days-input" class="usage-days-input" type="number" min="1" step="1" value="7" onchange="panels.dashboard.setCustomDays(this.value)">
+          <span>days</span>
+        </span>
         <button class="btn btn-sm" onclick="panels.dashboard.load()">Refresh</button>
       </div>
     </div>
@@ -1675,12 +1710,53 @@ const panels = {
   // ── Dashboard ───────────────────
   dashboard: {
     _interval: null,
-    onActivate() { this.load(); this._interval = setInterval(() => this.load(), 10000); },
+    _usageRange: 'today',
+    _customDays: '7',
+    onActivate() { this.syncUsageControls(); this.load(); this._interval = setInterval(() => this.load(), 10000); },
     onDeactivate() { clearInterval(this._interval); },
+    syncUsageControls() {
+      const select = document.getElementById('usage-range-select');
+      const custom = document.getElementById('usage-custom-days');
+      const input = document.getElementById('usage-days-input');
+      if (select) select.value = this._usageRange;
+      if (custom) custom.style.display = this._usageRange === 'custom' ? 'flex' : 'none';
+      if (input) input.value = this._customDays;
+    },
+    setUsageRange(value) {
+      this._usageRange = value || 'today';
+      this.syncUsageControls();
+      this.load();
+    },
+    setCustomDays(value) {
+      this._customDays = value || '7';
+      this.load();
+    },
+    usageSummaryPath() {
+      const range = this._usageRange || 'today';
+      if (range === 'today') return '/usage/summary';
+      const days = range === 'custom' ? Math.max(1, parseInt(this._customDays || '7', 10) || 7) : parseInt(range, 10);
+      return `/usage/summary?days=${days}`;
+    },
+    usageRangeTitle(usage = {}) {
+      const labels = {
+        today: 'Today',
+        '7': 'Last 7 Days',
+        '30': 'Last 30 Days',
+        '365': 'Last Year',
+        last_7_days: 'Last 7 Days',
+        last_30_days: 'Last 30 Days',
+        last_365_days: 'Last Year',
+      };
+      if (this._usageRange === 'custom') {
+        return `Last ${Math.max(1, parseInt(this._customDays || '7', 10) || 7)} Days`;
+      }
+      return labels[usage.window] || labels[this._usageRange] || 'Selected Range';
+    },
     async load() {
+      const usagePath = this.usageSummaryPath();
       const [healthResult, usageResult] = await Promise.all([
         api.get('/health'),
-        api.get('/usage/summary'),
+        api.get(usagePath),
       ]);
       if (!healthResult.ok) return;
       const h = healthResult.data;
@@ -1755,12 +1831,13 @@ const panels = {
       cards.innerHTML = html;
     },
     renderUsageCard(result) {
-      let html = '<div class="card usage-card"><h3>Today\'s Usage by Provider / Model</h3>';
+      const usage = result?.data?.usage || {};
+      const rangeTitle = this.usageRangeTitle(usage);
+      let html = `<div class="card usage-card"><h3>${escapeHtml(rangeTitle)} Usage by Provider / Model</h3>`;
       if (!result?.ok) {
         return `${html}<div class="usage-empty">Usage summary is unavailable right now.</div></div>`;
       }
 
-      const usage = result.data.usage || {};
       const totals = usage.totals || {};
       const rows = Array.isArray(usage.by_model) ? usage.by_model : [];
       const pricedModels = Number(totals.priced_models || 0);
@@ -1779,7 +1856,7 @@ const panels = {
       html += '</div>';
 
       if (!rows.length) {
-        html += '<div class="usage-empty">No LLM usage has been recorded for today yet.</div>';
+        html += '<div class="usage-empty">No LLM usage has been recorded for this range yet.</div>';
       } else {
         html += '<div class="usage-table-wrap"><table class="usage-table"><thead><tr>';
         html += '<th>Provider</th><th>Model</th><th>Total</th><th>Input</th><th>Cache Input</th><th>Output</th><th>Cache Hit</th><th>Cost</th><th>Pricing</th>';
