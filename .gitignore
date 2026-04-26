@@ -60,3 +60,5 @@ MEMORY.md
 # Dev artifacts
 test-project/
 clean_test_project*.sh
+# Local runtime config (may contain API keys)
+config.yaml

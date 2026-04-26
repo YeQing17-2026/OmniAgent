@@ -128,10 +128,10 @@ async def update_config(request: web.Request) -> web.Response:
         logger.error("config_save_error", error=str(e))
         return web.json_response({"error": f"Failed to save config: {e}"}, status=500)
 
-    # Update in-memory
+    # Update in-memory and refresh the running agent runtime.
     ctx.config = new_config
     if ctx.agent is not None:
-        ctx.agent.config = new_config
+        ctx.agent.apply_config(new_config)
 
     result = new_config.model_dump(mode="json")
     _mask_sensitive_fields(result)
@@ -151,7 +151,7 @@ async def reload_config_handler(request: web.Request) -> web.Response:
 
     ctx.config = reloaded
     if ctx.agent is not None:
-        ctx.agent.config = reloaded
+        ctx.agent.apply_config(reloaded)
 
     return web.json_response({"status": "reloaded"})
 
@@ -315,7 +315,7 @@ async def get_health(request: web.Request) -> web.Response:
             "model_id": ctx.agent.config.agent.model_id if ctx.agent.config else "unknown",
             "is_streaming": agent_state.is_streaming,
             "current_iteration": agent_state.iteration,
-            "pending_tool_calls": agent_state.pending_tool_calls,
+            "pending_tool_calls": sorted(agent_state.pending_tool_calls),
             "total_tool_calls": agent_state.total_tool_calls,
             "error": agent_state.error,
         }

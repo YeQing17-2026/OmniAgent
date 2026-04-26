@@ -85,7 +85,7 @@ class ReflexionAgent(Agent):
         # Create LLM provider
         if llm_provider is None:
             # Resolve provider-specific overrides
-            provider_api_url = config.agent.api_url
+            provider_api_url = config.agent.api_url or ""
             provider_api_key = ""
 
             if provider_cfg:
@@ -330,6 +330,119 @@ class ReflexionAgent(Agent):
             native_fc=self.llm.supports_native_function_calling,
         )
 
+    def _build_llm_from_config(self, config: OmniAgentConfig) -> Tuple[LLMProvider, str, str]:
+        """Create an LLM provider from the active config and resolve provider presets."""
+        provider_name = config.agent.model_provider
+        provider_cfg = config.providers.get(provider_name) if config.providers else None
+        usage_provider_name = provider_name
+        provider_model = config.agent.model_id
+
+        if provider_cfg:
+            if provider_cfg.provider_name:
+                usage_provider_name = provider_cfg.provider_name
+            if provider_cfg.model_id:
+                provider_model = provider_cfg.model_id
+
+        provider_api_url = config.agent.api_url or ""
+        provider_api_key = ""
+        if provider_cfg:
+            if provider_cfg.api_url:
+                provider_api_url = provider_cfg.api_url
+            provider_api_key = provider_cfg.api_key or ""
+
+        if not provider_api_key:
+            provider_api_key = config.api_key or config.openai_api_key or ""
+
+        config.agent.model_id = provider_model
+
+        llm_provider = create_llm_provider(
+            provider=provider_name,
+            api_key=provider_api_key,
+            model=provider_model,
+            api_url=provider_api_url,
+        )
+        return llm_provider, usage_provider_name, provider_model
+
+    def apply_config(self, config: OmniAgentConfig) -> None:
+        """Apply a reloaded config to the running agent without replacing the object."""
+        llm_provider, usage_provider_name, provider_model = self._build_llm_from_config(config)
+
+        self.config = config
+        self.max_iterations = config.agent.max_iterations
+        self.usage_provider_name = usage_provider_name
+        self.usage_model_id = provider_model
+        self.llm = cast(LLMProvider, UsageTrackingLLMProvider(
+            llm_provider,
+            recorder=self.usage_recorder,
+            default_provider=self.usage_provider_name,
+            default_model=self.usage_model_id,
+        ))
+
+        resolved_window = resolve_context_window_size(
+            config.agent.model_id,
+            config.agent.context_window_size,
+        )
+        self.context_manager.context_window_size = resolved_window
+        self.context_manager.llm = self.llm if config.agent.compaction_enabled else None
+        self.context_assembler = ContextAssembler(
+            token_budget=int(resolved_window * config.agent.system_prompt_token_ratio)
+        )
+
+        memory_api_key = config.api_key or config.openai_api_key or ""
+        if self.memory_manager is not None:
+            self.memory_manager.llm = self.llm if config.memory.enabled and memory_api_key else None
+            self.memory_manager.api_key = memory_api_key
+            self.memory_manager.api_url = config.agent.api_url or ""
+            self.memory_manager.model_id = config.agent.model_id
+            self.memory_manager.chunking_tokens = config.memory.chunking_tokens
+            self.memory_manager.chunking_overlap = config.memory.chunking_overlap
+            self.memory_manager.hybrid_enabled = config.memory.hybrid_enabled
+            self.memory_manager.vector_weight = config.memory.hybrid_vector_weight
+            self.memory_manager.text_weight = config.memory.hybrid_text_weight
+            self.memory_manager.query_max_results = config.memory.query_max_results
+            self.memory_manager.query_min_score = config.memory.query_min_score
+            self.memory_manager._vector_available = self.memory_manager.llm is not None
+        elif config.memory.enabled:
+            self.memory_manager = MemorySearchManager(
+                workspace_dir=self.work_dir,
+                store_path=self.work_dir / ".omniagent" / "memory.db",
+                llm_provider=self.llm if memory_api_key else None,
+                api_key=memory_api_key,
+                api_url=config.agent.api_url or "",
+                model_id=config.agent.model_id,
+                chunking_tokens=config.memory.chunking_tokens,
+                chunking_overlap=config.memory.chunking_overlap,
+                hybrid_enabled=config.memory.hybrid_enabled,
+                vector_weight=config.memory.hybrid_vector_weight,
+                text_weight=config.memory.hybrid_text_weight,
+                query_max_results=config.memory.query_max_results,
+                query_min_score=config.memory.query_min_score,
+            )
+            self.register_tool(MemorySearchTool(self.memory_manager))
+            self.register_tool(MemoryGetTool(self.memory_manager))
+
+        self._rl_active = config.agent.model_provider in ("vllm", "sglang")
+        if self._sentinel is not None:
+            self._sentinel._main_agent_config = config.agent
+        if self._guardian is not None:
+            self._guardian._main_agent_config = config.agent
+        if self._skill_evolution is not None:
+            self._skill_evolution.config = config.skill_evolution
+            self._skill_evolution.llm = self.llm
+            self._skill_evolution.analyzer.llm = self.llm
+            self._skill_evolution.evolution_tracker.llm = self.llm
+        if self._context_evolution is not None:
+            self._context_evolution.config = config.context_evolution
+            self._context_evolution.llm = self.llm
+            self._context_evolution.extractor.llm = self.llm
+
+        logger.info(
+            "agent_config_applied",
+            provider=self.usage_provider_name,
+            model=self.usage_model_id,
+            max_iterations=self.max_iterations,
+        )
+
     def steer(self, message: str) -> None:
         """Inject a steering message into the agent's execution loop."""
         self._steering_queue.append(message)
@@ -492,12 +605,13 @@ class ReflexionAgent(Agent):
         if context:
             usage_context.update(context)
         usage_context_token = None
+        reset_usage_context = None
         set_usage_context = getattr(self.llm, "set_usage_context", None)
         if callable(set_usage_context):
             usage_context_token = set_usage_context(usage_context)
+            reset_usage_context = getattr(self.llm, "reset_usage_context", None)
 
         def _reset_usage_context() -> None:
-            reset_usage_context = getattr(self.llm, "reset_usage_context", None)
             if usage_context_token is not None and callable(reset_usage_context):
                 reset_usage_context(usage_context_token)
 

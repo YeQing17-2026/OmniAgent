@@ -1,0 +1,85 @@
+# OmniAgent runtime config template used by both local Python and Docker deployments.
+#
+# This file is safe to commit because secrets are referenced through environment
+# variables. Do not put real API keys in this example file.
+#
+# Docker Compose mode:
+#   cp config.example.yaml config.yaml
+#   edit config.yaml on the VM/host
+#   docker-compose.yml bind-mounts ./config.yaml to /home/omniagent/.omniagent/config.yaml:ro
+#   OmniAgent reads its default config path in Docker mode
+#   ensure config.yaml is readable by UID 10001
+#   click "Reload from Disk" in the Web UI after editing config.yaml
+#
+# Local Python mode examples:
+#   omniagent --config config.yaml serve --host 127.0.0.1 --port 18790
+#   mkdir -p $HOME/.omniagent && cp config.example.yaml $HOME/.omniagent/config.yaml
+#   omniagent serve
+
+version: "0.1.0"
+work_dir: .
+
+providers:
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY:-}
+    model_id: deepseek-chat
+    api_url: https://api.deepseek.com/v1
+    provider_name: deepseek
+
+  openai:
+    api_key: ${OPENAI_API_KEY:-}
+    model_id: gpt-4o
+    api_url: https://api.openai.com/v1
+    provider_name: openai
+
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY:-}
+    model_id: claude-sonnet-4-20250514
+    api_url: null
+    provider_name: anthropic
+
+  ollama:
+    api_key: ""
+    model_id: llama3
+    api_url: null
+    provider_name: ollama
+
+  # OpenAI-compatible custom endpoint example.
+  custom:
+    api_key: ${CUSTOM_API_KEY:-}
+    model_id: default
+    api_url: ${CUSTOM_API_URL:-http://host.docker.internal:8000/v1}
+    provider_name: custom
+
+agent:
+  # Change this to one of: deepseek, openai, anthropic, ollama, custom.
+  model_provider: deepseek
+  model_id: deepseek-chat
+  api_url: null
+  temperature: 0.7
+  max_tokens: 4096
+  max_iterations: 10
+  reflexion_enabled: true
+  reflexion_max_attempts: 2
+
+gateway:
+  # Dockerfile passes --host 0.0.0.0 at startup for container networking.
+  # Keep this localhost value for local Python runs unless you need otherwise.
+  host: 127.0.0.1
+  port: 18790
+  session_timeout: 3600
+
+tools:
+  # minimal | coding | messaging | full
+  profile: coding
+
+usage:
+  pricing_catalog_enabled: true
+  pricing_catalog_url: https://models.dev/api.json
+  pricing_cache_ttl_seconds: 900
+  pricing_request_timeout_seconds: 2.0
+
+enable_progressive_loading: true
+enable_parallel_execution: true
+enable_security_guard: true
+enable_self_improving: true

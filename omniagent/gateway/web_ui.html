@@ -395,6 +395,79 @@ body {
 }
 .form-row .toggle.active::after { transform: translateX(18px); }
 .form-hint { font-size: 11px; color: var(--text-dim); margin-left: 172px; }
+.provider-note {
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.provider-note code {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.provider-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.provider-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.provider-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.provider-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.provider-field {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+.provider-field-label { color: var(--text-dim); }
+.provider-field-value {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.provider-empty {
+  grid-column: 1 / -1;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.provider-empty code,
+.provider-note code {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.secret-mask { color: var(--warning); }
 .form-actions-bar {
   display: flex; gap: 8px; padding: 16px 24px;
   border-top: 1px solid var(--border);
@@ -790,7 +863,12 @@ body {
       </details>
       <details class="form-section">
         <summary>Providers</summary>
-        <div class="form-body" id="providers-list"></div>
+        <div class="form-body">
+          <div class="provider-note">
+            Docker/file-mounted config mode: edit host <code>config.yaml</code> (mounted as <code>~/.omniagent/config.yaml</code>), then click <strong>Reload from Disk</strong>. API keys are masked here and should be supplied through the mounted config file or environment variables.
+          </div>
+          <div class="provider-list" id="providers-list"></div>
+        </div>
       </details>
     </div>
     <div class="form-actions-bar">
@@ -1204,17 +1282,33 @@ const panels = {
       // Providers
       const provList = document.getElementById('providers-list');
       const provs = c.providers || {};
-      if (!Object.keys(provs).length) {
-        provList.innerHTML = '<p style="font-size:13px;color:var(--text-dim)">No providers configured</p>';
+      const activeProvider = (c.agent && c.agent.model_provider) || '';
+      const entries = Object.entries(provs);
+      if (!entries.length) {
+        provList.innerHTML = `
+          <div class="provider-empty">
+            No provider presets configured. Edit <code>config.yaml</code> on the VM, add a <code>providers:</code> section, then click <strong>Reload from Disk</strong>.
+          </div>`;
       } else {
-        provList.innerHTML = Object.entries(provs).map(([name, p]) => `
-          <div style="display:flex;flex-direction:column;gap:6px;padding:8px 0;border-bottom:1px solid var(--border)">
-            <div style="font-size:13px;font-weight:600">${escapeHtml(name)}</div>
-            <div class="form-row"><label style="min-width:100px">API Key</label><span style="font-size:12px;color:var(--text-dim)">${escapeHtml(p.api_key || '(not set)')}</span></div>
-            <div class="form-row"><label style="min-width:100px">API URL</label><span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.api_url || '(default)')}</span></div>
-            ${p.model ? `<div class="form-row"><label style="min-width:100px">Model</label><span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.model)}</span></div>` : ''}
-          </div>
-        `).join('');
+        provList.innerHTML = entries.map(([name, provider]) => {
+          const p = provider || {};
+          const isActive = name === activeProvider;
+          const apiKeyState = p.api_key ? 'configured (masked)' : 'not set';
+          const apiUrl = p.api_url || '(default)';
+          const modelId = p.model_id || '(not set)';
+          const usageName = p.provider_name || name;
+          return `
+            <div class="provider-card ${isActive ? 'active' : ''}">
+              <div class="provider-card-header">
+                <span class="provider-name">${escapeHtml(name)}</span>
+                ${isActive ? '<span class="badge badge-success">ACTIVE</span>' : '<span class="badge badge-muted">preset</span>'}
+              </div>
+              <div class="provider-field"><span class="provider-field-label">Model ID</span><span class="provider-field-value">${escapeHtml(modelId)}</span></div>
+              <div class="provider-field"><span class="provider-field-label">API URL</span><span class="provider-field-value">${escapeHtml(apiUrl)}</span></div>
+              <div class="provider-field"><span class="provider-field-label">Usage name</span><span class="provider-field-value">${escapeHtml(usageName)}</span></div>
+              <div class="provider-field"><span class="provider-field-label">API Key</span><span class="provider-field-value secret-mask">${escapeHtml(apiKeyState)}</span></div>
+            </div>`;
+        }).join('');
       }
     },
     async save() {
