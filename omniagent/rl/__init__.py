@@ -5,7 +5,7 @@ RL training pipeline for OmniAgent:
 - Async rollout worker (rollout.py) bridging proxy and SLIME trainer
 - Config adapter (config.py) converting OmniAgent RLConfig to args namespace
 
-**Only activates when model_provider is "vllm" or "sglang".**
+**Only activates when api_type is "vllm" or "sglang".**
 When using remote LLM providers (DeepSeek, OpenAI, etc.), RL is completely
 disabled and zero overhead.
 

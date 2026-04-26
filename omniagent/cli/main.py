@@ -26,11 +26,11 @@ def main(ctx: click.Context, config: Path) -> None:
     3. Self-Evolution: RLAIF, Self-Improving, Skill Management
     """
     ctx.ensure_object(dict)
+    ctx.obj["config_path"] = str(config) if config else None
 
     # Load config
     try:
         ctx.obj["config"] = load_config(config)
-        ctx.obj["config_path"] = str(config) if config else None
     except Exception as e:
         click.echo(f"Error loading config: {e}", err=True)
         ctx.obj["config"] = get_default_config()
@@ -93,7 +93,8 @@ def serve(ctx: click.Context, host: str, port: int, verbose: bool) -> None:
     agent = ReflexionAgent(config)
 
     # Create and run server
-    server = GatewayServer(config, agent=agent)
+    config_path = Path(ctx.obj["config_path"]) if ctx.obj.get("config_path") else None
+    server = GatewayServer(config, agent=agent, config_path=config_path)
 
     # Set agent handler
     async def agent_handler(message):
@@ -161,41 +162,49 @@ def onboard(ctx: click.Context) -> None:
 
     config_obj = ctx.obj["config"]
 
-    # --- Step 1: Choose LLM provider ---
-    providers = [
+    # --- Step 1: Choose LLM provider implementation ---
+    provider_types = [
         ("deepseek", "DeepSeek (e.g., deepseek-chat)"),
         ("openai", "OpenAI (e.g., gpt-4o)"),
         ("anthropic", "Anthropic (e.g., claude-sonnet-4-20250514)"),
         ("ollama", "Ollama (e.g., llama3)"),
         ("gemini", "Google Gemini (e.g., gemini-2.0-flash)"),
         ("openrouter", "OpenRouter (e.g., openai/gpt-4o)"),
-        ("custom", "Custom OpenAI-compatible endpoint"),
+        ("openai-compatible", "OpenAI-compatible endpoint"),
     ]
+    active_provider_key = config_obj.agent.model_provider
+    active_provider_cfg = (config_obj.providers or {}).get(active_provider_key)
+    active_api_type = active_provider_cfg.api_type if active_provider_cfg and active_provider_cfg.api_type else active_provider_key
 
-    click.echo("Step 1/5: Choose LLM Provider")
+    click.echo("Step 1/5: Choose LLM API Type")
     click.echo("-" * 40)
-    for i, (key, desc) in enumerate(providers, 1):
-        default = " (current)" if config_obj.agent.model_provider == key else ""
+    for i, (key, desc) in enumerate(provider_types, 1):
+        default = " (current)" if active_api_type == key else ""
         click.echo(f"  {i}. {desc}{default}")
 
     choice = click.prompt(
-        "\n  Select provider",
-        type=click.IntRange(1, len(providers)),
-        default=next((i for i, (k, _) in enumerate(providers, 1) if k == config_obj.agent.model_provider), 1),
+        "\n  Select API type",
+        type=click.IntRange(1, len(provider_types)),
+        default=next((i for i, (k, _) in enumerate(provider_types, 1) if k == active_api_type), 1),
     )
-    selected_provider, selected_desc = providers[choice - 1]
+    selected_api_type, selected_desc = provider_types[choice - 1]
     click.echo(f"  → {selected_desc}")
 
     # --- Step 2: Provider-specific config ---
     provider_api_url = None
+    selected_provider = selected_api_type
 
-    if selected_provider == "custom":
-        click.echo(f"\nStep 2/5: Custom Provider Settings")
+    if selected_api_type == "openai-compatible":
+        click.echo(f"\nStep 2/5: OpenAI-compatible Provider Settings")
         click.echo("-" * 40)
+        selected_provider = click.prompt(
+            "  Provider key/name",
+            default=active_provider_key if active_api_type == "openai-compatible" else "openai-compatible-provider",
+        )
         provider_api_url = click.prompt("  API Base URL", type=str)
-        click.echo(f"  → {provider_api_url}")
+        click.echo(f"  → {selected_provider} ({provider_api_url})")
     else:
-        click.echo(f"\nStep 2/5: (skipped — using {selected_desc} defaults)")
+        click.echo(f"\nStep 2/5: (skipped — provider key will be {selected_provider})")
 
     # --- Step 3: Enter API key ---
     click.echo(f"\nStep 3/5: API Key")
@@ -208,9 +217,9 @@ def onboard(ctx: click.Context) -> None:
         "ollama": None,
         "gemini": "GOOGLE_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
-        "custom": None,
+        "openai-compatible": None,
     }
-    env_var = env_var_map.get(selected_provider)
+    env_var = env_var_map.get(selected_api_type)
     existing_key = config_obj.api_key or (os.getenv(env_var) if env_var else None)
 
     if existing_key:
@@ -218,7 +227,7 @@ def onboard(ctx: click.Context) -> None:
         use_existing = click.confirm("  Use existing key?", default=True)
         api_key = existing_key if use_existing else click.prompt("  Enter API key")
     else:
-        api_key = click.prompt("  Enter API key" if selected_provider != "ollama" else "  API key (usually empty for Ollama)", default="", show_default=False)
+        api_key = click.prompt("  Enter API key" if selected_api_type != "ollama" else "  API key (usually empty for Ollama)", default="", show_default=False)
 
     # --- Step 4: Choose model ---
     click.echo(f"\nStep 4/5: Model ID")
@@ -233,12 +242,12 @@ def onboard(ctx: click.Context) -> None:
         "openrouter": "openai/gpt-4o",
     }
 
-    if selected_provider == "custom":
+    if selected_api_type == "openai-compatible":
         model_id = click.prompt("  Model ID")
-    elif selected_provider == "ollama":
+    elif selected_api_type == "ollama":
         model_id = click.prompt("  Model name", default=default_models.get("ollama", "llama3"))
     else:
-        default_model = default_models.get(selected_provider, "")
+        default_model = default_models.get(selected_api_type, "")
         use_default = click.confirm(f"  Use default model '{default_model}'?", default=True)
         model_id = default_model if use_default else click.prompt("  Model name")
 
@@ -256,8 +265,12 @@ def onboard(ctx: click.Context) -> None:
         click.echo("  Cancelled. No changes made.")
         return
 
-    # Build provider config dict (providers block for extensibility)
+    # Build provider config dict. Built-in provider keys infer api_type from the
+    # key for compatibility with earlier configs; named OpenAI-compatible
+    # providers declare api_type so the runtime uses the OpenAI-compatible client.
     provider_data = {"api_key": api_key, "model_id": model_id}
+    if selected_api_type == "openai-compatible":
+        provider_data["api_type"] = "openai-compatible"
     if provider_api_url:
         provider_data["api_url"] = provider_api_url
 

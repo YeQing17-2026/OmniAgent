@@ -1018,7 +1018,7 @@ class LocalInferenceLLMProvider(OpenAILLMProvider):
     This provider extends OpenAILLMProvider to collect per-token logprobs,
     which are essential for GRPO/PPO importance sampling.
 
-    Only used when model_provider is "vllm" or "sglang".
+    Only used when api_type is "vllm" or "sglang".
     """
 
     def __init__(
@@ -1126,20 +1126,27 @@ class LocalInferenceLLMProvider(OpenAILLMProvider):
                         ]
                     logprobs.append(entry)
 
-            provider_name = "vllm"
+            metadata_provider = "vllm"
             if self.base_url and "sglang" in self.base_url.lower():
-                provider_name = "sglang"
+                metadata_provider = "sglang"
 
             return LLMResponse(
                 content=content,
                 finish_reason=choice.finish_reason,
                 usage=usage,
                 tool_calls=tool_calls,
-                metadata={"model": self.model, "provider": provider_name},
+                metadata={"model": self.model, "provider": metadata_provider},
                 logprobs=logprobs,
             )
         finally:
             await client.close()
+
+
+def _normalize_provider_api_type(provider: str) -> str:
+    normalized = str(provider or "deepseek").strip().lower()
+    if normalized in {"custom", "openai_compatible"}:
+        return "openai-compatible"
+    return normalized
 
 
 def create_llm_provider(
@@ -1148,8 +1155,12 @@ def create_llm_provider(
     model: str = "",
     api_url: str = None,
 ) -> LLMProvider:
-    """Factory function to create an LLM provider instance."""
-    provider = provider.lower()
+    """Factory function to create an LLM provider instance.
+
+    The provider argument is an implementation type, not necessarily the
+    user-facing provider key from config.providers.
+    """
+    provider = _normalize_provider_api_type(provider)
 
     if provider == "deepseek":
         return DeepSeekLLMProvider(api_key=api_key, model=model or "deepseek-chat", api_url=api_url or "https://api.deepseek.com/v1")
@@ -1170,9 +1181,9 @@ def create_llm_provider(
             api_key=api_key or "not-needed",
             model=model or "default",
         )
-    elif provider == "custom":
+    elif provider == "openai-compatible":
         if not api_url:
-            raise ValueError("Custom provider requires api_url to be set (e.g. in config: providers.custom.api_url)")
+            raise ValueError("Provider api_type=openai-compatible requires api_url to be set")
         return OpenAILLMProvider(api_key=api_key, model=model or "default", api_url=api_url)
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
+        raise ValueError(f"Unknown LLM provider api_type: {provider}")

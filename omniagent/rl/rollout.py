@@ -5,7 +5,7 @@ SLIME training loop. Data production is request-driven: external
 agents send requests through the proxy, which collects training
 samples.
 
-Only activates when model_provider is "vllm" or "sglang".
+Only activates when api_type is "vllm" or "sglang".
 
 """
 

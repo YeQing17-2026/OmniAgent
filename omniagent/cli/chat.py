@@ -31,21 +31,31 @@ _prompt_executor = ThreadPoolExecutor(max_workers=1)
 class ChatSession:
     """Interactive chat session."""
 
-    def __init__(self, work_dir: Optional[Path] = None, verbose: bool = False, provider: Optional[str] = None):
+    def __init__(
+        self,
+        work_dir: Optional[Path] = None,
+        verbose: bool = False,
+        provider: Optional[str] = None,
+        config_path: Optional[Path] = None,
+    ):
         """Initialize chat session."""
         self.work_dir = work_dir or Path.cwd()
-        self.config = load_config()  # Load from file or defaults with env vars
+        self.config = load_config(config_path)  # Load from file or defaults with env vars
         self.agent: Optional[ReflexionAgent] = None
         self.verbose = verbose
 
-        # Override provider if specified via CLI
-        if provider and provider in (self.config.providers or {}):
+        # Override provider key if specified via CLI.
+        if provider:
+            providers = self.config.providers or {}
+            if provider not in providers and provider not in {
+                "deepseek", "openai", "anthropic", "ollama", "gemini", "openrouter", "vllm", "sglang", "openai-compatible", "custom"
+            }:
+                raise ValueError(f"Unknown provider key '{provider}'. Add providers.{provider} to config.yaml first.")
             self.config.agent.model_provider = provider
-            provider_cfg = self.config.providers[provider]
-            if provider_cfg.model_id:
-                self.config.agent.model_id = provider_cfg.model_id
-            if provider_cfg.api_url:
-                self.config.agent.api_url = provider_cfg.api_url
+            provider_cfg = providers.get(provider)
+            if provider_cfg:
+                if provider_cfg.api_url:
+                    self.config.agent.api_url = provider_cfg.api_url
         self.session_id: Optional[str] = None
 
         # Logging: file always enabled, console controlled by --verbose
@@ -482,12 +492,15 @@ class ChatSession:
     "--provider",
     type=str,
     default=None,
-    help="LLM provider override (e.g. deepseek, openai)",
+    help="Provider key override (e.g. deepseek, openai, byr)",
 )
-def chat(work_dir: Optional[str], verbose: bool, provider: Optional[str]):
+@click.pass_context
+def chat(ctx: click.Context, work_dir: Optional[str], verbose: bool, provider: Optional[str]):
     """Start an interactive chat session with OmniAgent."""
     work_dir_path = Path(work_dir) if work_dir else Path.cwd()
-    session = ChatSession(work_dir=work_dir_path, verbose=verbose, provider=provider)
+    config_path_raw = ctx.obj.get("config_path") if ctx.obj else None
+    config_path = Path(config_path_raw) if config_path_raw else None
+    session = ChatSession(work_dir=work_dir_path, verbose=verbose, provider=provider, config_path=config_path)
 
     try:
         asyncio.run(session.start())

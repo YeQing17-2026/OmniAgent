@@ -1,14 +1,17 @@
 """REST API handlers for OmniAgent gateway."""
 
 import errno
+import json
 import time
+
+import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 from aiohttp import web
 
-from omniagent.config.loader import DEFAULT_CONFIG_PATH, deep_merge, load_config, save_config
+from omniagent.config.loader import DEFAULT_CONFIG_PATH, deep_merge, load_config
 from omniagent.infra import get_logger
 from omniagent.config.models import OmniAgentConfig
 from omniagent.agents.usage import (
@@ -63,6 +66,80 @@ def _contains_sensitive(updates: dict) -> List[str]:
     return found
 
 
+def _load_raw_config_for_preserve(config_path: Optional[Path]) -> Optional[dict]:
+    """Load raw config without env substitution so secrets/placeholders survive saves."""
+    path = config_path or DEFAULT_CONFIG_PATH
+    if not path.exists():
+        return None
+    if path.suffix in (".yaml", ".yml"):
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    elif path.suffix == ".json":
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _raw_provider_for_key(raw_providers: dict, provider_key: str) -> Optional[dict]:
+    raw_provider = raw_providers.get(provider_key)
+    if isinstance(raw_provider, dict):
+        return raw_provider
+    for candidate in raw_providers.values():
+        if not isinstance(candidate, dict):
+            continue
+        legacy_name = candidate.get("provider_name")
+        if legacy_name is not None and str(legacy_name).strip() == provider_key:
+            return candidate
+    return None
+
+
+def _restore_sensitive_for_save(data: dict, raw_config: Optional[dict]) -> None:
+    """Restore raw sensitive values/placeholders before persisting runtime config."""
+    raw_config = raw_config or {}
+
+    for name in _SENSITIVE_FIELDS:
+        if name in raw_config:
+            data[name] = raw_config[name]
+        elif name in data:
+            data[name] = None
+
+    providers = data.get("providers")
+    raw_providers = raw_config.get("providers")
+    if not isinstance(providers, dict):
+        return
+    if not isinstance(raw_providers, dict):
+        raw_providers = {}
+
+    for provider_key, provider_data in providers.items():
+        if not isinstance(provider_data, dict):
+            continue
+        raw_provider = _raw_provider_for_key(raw_providers, str(provider_key))
+        if isinstance(raw_provider, dict) and "api_key" in raw_provider:
+            provider_data["api_key"] = raw_provider["api_key"]
+        elif "api_key" in provider_data:
+            provider_data["api_key"] = None
+
+
+def _save_config_preserving_sensitive(config: OmniAgentConfig, config_path: Optional[Path]) -> None:
+    """Save config while keeping env-resolved secrets out of the file."""
+    path = config_path or DEFAULT_CONFIG_PATH
+    raw_config = _load_raw_config_for_preserve(path)
+    data = config.model_dump(mode="json")
+    _restore_sensitive_for_save(data, raw_config)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix in (".yaml", ".yml"):
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False)
+    elif path.suffix == ".json":
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    else:
+        raise ValueError(f"Unsupported config format: {path.suffix}")
+
+
 # ── API Context ────────────────────────────────────────────────
 
 
@@ -74,6 +151,7 @@ class APIContext:
     session_manager: Optional["SessionManager"] = None
     config: Optional["OmniAgentConfig"] = None
     channel_manager: Optional["ChannelManager"] = None
+    config_path: Optional[Path] = None
     start_time: float = field(default_factory=time.time)
 
 
@@ -127,31 +205,48 @@ async def update_config(request: web.Request) -> web.Response:
     try:
         new_config = OmniAgentConfig(**merged)
     except Exception as e:
-        return web.json_response({"error": f"Invalid config: {e}"}, status=400)
+        logger.warning("config_validation_error", error_type=type(e).__name__)
+        return web.json_response({"error": "Invalid config", "code": "invalid_config"}, status=400)
 
-    # Save to disk when possible. Docker deployments commonly mount config.yaml
-    # read-only; in that case still apply the change to the live runtime and tell
-    # the UI it is not persisted across reload/restart.
+    # Apply first so invalid runtime provider choices cannot be persisted. Docker
+    # deployments commonly mount config.yaml read-only; after a successful runtime
+    # apply, save when possible and report runtime-only changes when the mount is ro.
+    old_config = ctx.config
+    try:
+        if ctx.agent is not None:
+            ctx.agent.apply_config(new_config)
+    except Exception as e:
+        logger.warning("config_apply_error", error_type=type(e).__name__)
+        return web.json_response({"error": "Failed to apply config", "code": "config_apply_failed"}, status=400)
+
     persisted = True
     warning = None
     try:
-        save_config(new_config)
+        _save_config_preserving_sensitive(new_config, ctx.config_path)
     except OSError as e:
         if e.errno in (errno.EROFS, errno.EACCES, errno.EPERM):
             persisted = False
             warning = "Config file is read-only; changes were applied to the running process only. Edit config.yaml and Reload from Disk to persist them."
-            logger.warning("config_save_read_only", error=str(e))
+            logger.warning("config_save_read_only", error_type=type(e).__name__, errno=e.errno)
         else:
-            logger.error("config_save_error", error=str(e))
-            return web.json_response({"error": f"Failed to save config: {e}"}, status=500)
+            if ctx.agent is not None:
+                try:
+                    ctx.agent.apply_config(old_config)
+                except Exception as rollback_error:
+                    logger.error("config_apply_rollback_error", error_type=type(rollback_error).__name__)
+            logger.error("config_save_error", error_type=type(e).__name__)
+            return web.json_response({"error": "Failed to save config", "code": "config_save_failed"}, status=500)
     except Exception as e:
-        logger.error("config_save_error", error=str(e))
-        return web.json_response({"error": f"Failed to save config: {e}"}, status=500)
+        if ctx.agent is not None:
+            try:
+                ctx.agent.apply_config(old_config)
+            except Exception as rollback_error:
+                logger.error("config_apply_rollback_error", error_type=type(rollback_error).__name__)
+        logger.error("config_save_error", error_type=type(e).__name__)
+        return web.json_response({"error": "Failed to save config", "code": "config_save_failed"}, status=500)
 
-    # Update in-memory and refresh the running agent runtime.
+    # Update in-memory after both validation and runtime application succeed.
     ctx.config = new_config
-    if ctx.agent is not None:
-        ctx.agent.apply_config(new_config)
 
     result = new_config.model_dump(mode="json")
     _mask_sensitive_fields(result)
@@ -172,13 +267,14 @@ async def reload_config_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "Config not loaded"}, status=503)
 
     try:
-        reloaded = load_config(DEFAULT_CONFIG_PATH)
+        reloaded = load_config(ctx.config_path or DEFAULT_CONFIG_PATH)
+        if ctx.agent is not None:
+            ctx.agent.apply_config(reloaded)
     except Exception as e:
-        return web.json_response({"error": f"Failed to reload: {e}"}, status=500)
+        logger.warning("config_reload_error", error_type=type(e).__name__)
+        return web.json_response({"error": "Failed to reload config", "code": "config_reload_failed"}, status=500)
 
     ctx.config = reloaded
-    if ctx.agent is not None:
-        ctx.agent.apply_config(reloaded)
 
     return web.json_response({"status": "reloaded"})
 

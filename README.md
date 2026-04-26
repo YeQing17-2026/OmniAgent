@@ -122,6 +122,8 @@ agent:
   reflexion_enabled: true
 ```
 
+> Built-in provider keys (`deepseek`, `openai`, etc.) infer their API type from the key. Named OpenAI-compatible providers should set `api_type: openai-compatible`.
+>
 > Full configuration reference: [docs.omniagent.dev](https://docs.omniagent.dev) *(coming soon)*
 
 ---

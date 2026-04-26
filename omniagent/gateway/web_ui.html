@@ -891,8 +891,8 @@ body {
         <summary>Agent</summary>
         <div class="form-body">
           <div class="form-row">
-            <label>Model Provider</label>
-            <input type="text" id="cfg-model-provider" placeholder="e.g. openai, deepseek" oninput="panels.settings.renderPricingFromForm()">
+            <label>Provider Key</label>
+            <input type="text" id="cfg-model-provider" placeholder="e.g. openai, byr" oninput="panels.settings.renderPricingFromForm()">
           </div>
           <div class="form-row">
             <label>Model ID</label>
@@ -972,7 +972,7 @@ body {
         <summary>Providers</summary>
         <div class="form-body">
           <div class="provider-note">
-            Config file mode: edit your active config file (normally <code>~/.omniagent/config.yaml</code>; Docker Compose mounts <code>./config.yaml</code> there), then click <strong>Reload from Disk</strong>. API keys are masked here and should be supplied through the config file or environment variables.
+            Config file mode: edit your active config file (normally <code>~/.omniagent/config.yaml</code>, or the path passed with <code>--config</code>), then click <strong>Reload from Disk</strong>. API keys are masked here and should be supplied through the config file or environment variables.
           </div>
           <div class="provider-list" id="providers-list"></div>
         </div>
@@ -1135,13 +1135,12 @@ const PRICING_INPUT_IDS = {
 function getActivePricingIdentity(config) {
   const providerName = config?.agent?.model_provider || '';
   const provider = (config?.providers || {})[providerName] || {};
-  const modelId = provider.model_id || config?.agent?.model_id || '';
-  const usageName = provider.provider_name || providerName;
+  const modelId = config?.agent?.model_id || provider.model_id || '';
   return {
     providerName,
-    usageName,
+    apiType: provider.api_type || providerName,
     modelId,
-    pricingKey: usageName && modelId ? `${usageName}/${modelId}` : '',
+    pricingKey: providerName && modelId ? `${providerName}/${modelId}` : '',
   };
 }
 
@@ -1530,18 +1529,25 @@ const panels = {
           const isActive = name === activeProvider;
           const apiKeyState = p.api_key ? 'configured (masked)' : 'not set';
           const apiUrl = p.api_url || '(default)';
-          const modelId = p.model_id || '(not set)';
-          const usageName = p.provider_name || name;
-          const pricingKey = p.model_id ? `${usageName}/${p.model_id}` : '(set model_id first)';
+          const activeModelId = c.agent?.model_id || p.model_id || '';
+          const providerModelId = p.model_id || '';
+          const modelId = (isActive ? activeModelId : providerModelId) || '(not set)';
+          const modelLabel = isActive ? 'Active Model ID' : 'Default Model ID';
+          const apiType = p.api_type || name;
+          const apiTypeRow = apiType && apiType !== name
+            ? `<div class="provider-field"><span class="provider-field-label">API Type</span><span class="provider-field-value">${escapeHtml(apiType)}</span></div>`
+            : '';
+          const pricingModelId = isActive ? activeModelId : providerModelId;
+          const pricingKey = pricingModelId ? `${name}/${pricingModelId}` : '(set model_id first)';
           return `
             <div class="provider-card ${isActive ? 'active' : ''}">
               <div class="provider-card-header">
                 <span class="provider-name">${escapeHtml(name)}</span>
                 ${isActive ? '<span class="badge badge-success">ACTIVE</span>' : '<span class="badge badge-muted">preset</span>'}
               </div>
-              <div class="provider-field"><span class="provider-field-label">Model ID</span><span class="provider-field-value">${escapeHtml(modelId)}</span></div>
+              <div class="provider-field"><span class="provider-field-label">${modelLabel}</span><span class="provider-field-value">${escapeHtml(modelId)}</span></div>
+              ${apiTypeRow}
               <div class="provider-field"><span class="provider-field-label">API URL</span><span class="provider-field-value">${escapeHtml(apiUrl)}</span></div>
-              <div class="provider-field"><span class="provider-field-label">Usage name</span><span class="provider-field-value">${escapeHtml(usageName)}</span></div>
               <div class="provider-field"><span class="provider-field-label">Pricing key</span><span class="provider-field-value">${escapeHtml(pricingKey)}</span></div>
               <div class="provider-field"><span class="provider-field-label">API Key</span><span class="provider-field-value secret-mask">${escapeHtml(apiKeyState)}</span></div>
             </div>`;

@@ -125,6 +125,8 @@ agent:
   reflexion_enabled: true
 ```
 
+> 内置 Provider key（如 `deepseek`、`openai`）会默认推断同名 API type；命名的 OpenAI-compatible Provider 才需要设置 `api_type: openai-compatible`。
+>
 > 完整配置参考：[docs.omniagent.dev](https://docs.omniagent.dev) *(即将上线)*
 
 ---

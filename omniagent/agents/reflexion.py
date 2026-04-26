@@ -43,6 +43,16 @@ from .hooks import ToolHookManager, ToolCallContext
 logger = get_logger(__name__)
 
 
+def _resolve_active_model(config: OmniAgentConfig, provider_cfg: Any) -> str:
+    """Resolve active model with agent.model_id overriding provider defaults."""
+    provider_model = getattr(provider_cfg, "model_id", None) if provider_cfg else None
+    agent_model = config.agent.model_id
+    agent_fields_set = getattr(config.agent, "model_fields_set", set())
+    if agent_model and ("model_id" in agent_fields_set or not provider_model):
+        return agent_model
+    return provider_model or agent_model
+
+
 class ReflexionAgent(Agent):
     """AI Agent with native function calling support."""
 
@@ -72,48 +82,25 @@ class ReflexionAgent(Agent):
         self.enable_security = enable_security
         self.approval_callback = approval_callback
 
-        provider_name = config.agent.model_provider
-        provider_cfg = config.providers.get(provider_name) if config.providers else None
-        usage_provider_name = config.agent.model_provider
-        provider_model = config.agent.model_id
-        if provider_cfg:
-            if provider_cfg.provider_name:
-                usage_provider_name = provider_cfg.provider_name
-            if provider_cfg.model_id:
-                provider_model = provider_cfg.model_id
+        provider_key = config.agent.model_provider
+        provider_cfg = config.providers.get(provider_key) if config.providers else None
+        provider_api_type = provider_cfg.api_type if provider_cfg and provider_cfg.api_type else provider_key
+        usage_provider_key = provider_key
+        provider_model = _resolve_active_model(config, provider_cfg)
 
         # Create LLM provider
         if llm_provider is None:
-            # Resolve provider-specific overrides
-            provider_api_url = config.agent.api_url or ""
-            provider_api_key = ""
+            llm_provider, usage_provider_key, provider_model, provider_api_type = self._build_llm_from_config(config)
+        config.agent.model_id = provider_model
 
-            if provider_cfg:
-                if provider_cfg.api_url:
-                    provider_api_url = provider_cfg.api_url
-                provider_api_key = provider_cfg.api_key or ""
-
-            # Fallback to top-level api_key
-            if not provider_api_key:
-                provider_api_key = config.api_key or config.openai_api_key or ""
-
-            # Sync resolved model back to config so system prompt uses it
-            config.agent.model_id = provider_model
-
-            llm_provider = create_llm_provider(
-                provider=provider_name,
-                api_key=provider_api_key,
-                model=provider_model,
-                api_url=provider_api_url,
-            )
-
-        self.usage_provider_name = usage_provider_name
+        self.active_api_type = provider_api_type
+        self.usage_provider_key = usage_provider_key
         self.usage_model_id = provider_model
         self.usage_recorder = UsageRecorder(self.work_dir / ".omniagent" / "usage.db")
         self.llm = cast(LLMProvider, UsageTrackingLLMProvider(
             llm_provider,
             recorder=self.usage_recorder,
-            default_provider=self.usage_provider_name,
+            default_provider=self.usage_provider_key,
             default_model=self.usage_model_id,
         ))
 
@@ -246,13 +233,14 @@ class ReflexionAgent(Agent):
                 logger.warning("context_evolution_init_failed", error=str(e))
 
         # Initialize RL module (ONLY for local providers: vllm/sglang)
-        self._rl_active = config.agent.model_provider in ("vllm", "sglang")
+        self._rl_active = self.active_api_type in ("vllm", "sglang")
         if self._rl_active and config.rl.enabled:
             try:
                 from omniagent.rl import RLAPIServer
                 logger.info(
                     "rl_module_available",
-                    provider=config.agent.model_provider,
+                    provider=self.usage_provider_key,
+                    api_type=self.active_api_type,
                 )
             except Exception as e:
                 logger.warning("rl_init_failed", error=str(e))
@@ -330,18 +318,14 @@ class ReflexionAgent(Agent):
             native_fc=self.llm.supports_native_function_calling,
         )
 
-    def _build_llm_from_config(self, config: OmniAgentConfig) -> Tuple[LLMProvider, str, str]:
+    def _build_llm_from_config(self, config: OmniAgentConfig) -> Tuple[LLMProvider, str, str, str]:
         """Create an LLM provider from the active config and resolve provider presets."""
-        provider_name = config.agent.model_provider
-        provider_cfg = config.providers.get(provider_name) if config.providers else None
-        usage_provider_name = provider_name
-        provider_model = config.agent.model_id
-
-        if provider_cfg:
-            if provider_cfg.provider_name:
-                usage_provider_name = provider_cfg.provider_name
-            if provider_cfg.model_id:
-                provider_model = provider_cfg.model_id
+        provider_key = config.agent.model_provider
+        provider_cfg = config.providers.get(provider_key) if config.providers else None
+        provider_api_type = provider_cfg.api_type if provider_cfg and provider_cfg.api_type else provider_key
+        usage_provider_key = provider_key
+        provider_model = _resolve_active_model(config, provider_cfg)
+        config.agent.model_id = provider_model
 
         provider_api_url = config.agent.api_url or ""
         provider_api_key = ""
@@ -353,28 +337,27 @@ class ReflexionAgent(Agent):
         if not provider_api_key:
             provider_api_key = config.api_key or config.openai_api_key or ""
 
-        config.agent.model_id = provider_model
-
         llm_provider = create_llm_provider(
-            provider=provider_name,
+            provider=provider_api_type,
             api_key=provider_api_key,
             model=provider_model,
             api_url=provider_api_url,
         )
-        return llm_provider, usage_provider_name, provider_model
+        return llm_provider, usage_provider_key, provider_model, provider_api_type
 
     def apply_config(self, config: OmniAgentConfig) -> None:
         """Apply a reloaded config to the running agent without replacing the object."""
-        llm_provider, usage_provider_name, provider_model = self._build_llm_from_config(config)
+        llm_provider, usage_provider_key, provider_model, provider_api_type = self._build_llm_from_config(config)
 
         self.config = config
         self.max_iterations = config.agent.max_iterations
-        self.usage_provider_name = usage_provider_name
+        self.usage_provider_key = usage_provider_key
         self.usage_model_id = provider_model
+        self.active_api_type = provider_api_type
         self.llm = cast(LLMProvider, UsageTrackingLLMProvider(
             llm_provider,
             recorder=self.usage_recorder,
-            default_provider=self.usage_provider_name,
+            default_provider=self.usage_provider_key,
             default_model=self.usage_model_id,
         ))
 
@@ -421,7 +404,7 @@ class ReflexionAgent(Agent):
             self.register_tool(MemorySearchTool(self.memory_manager))
             self.register_tool(MemoryGetTool(self.memory_manager))
 
-        self._rl_active = config.agent.model_provider in ("vllm", "sglang")
+        self._rl_active = self.active_api_type in ("vllm", "sglang")
         if self._sentinel is not None:
             self._sentinel._main_agent_config = config.agent
         if self._guardian is not None:
@@ -438,7 +421,7 @@ class ReflexionAgent(Agent):
 
         logger.info(
             "agent_config_applied",
-            provider=self.usage_provider_name,
+            provider=self.usage_provider_key,
             model=self.usage_model_id,
             max_iterations=self.max_iterations,
         )
@@ -561,7 +544,7 @@ class ReflexionAgent(Agent):
                 "session_id": message.session_id,
                 "user_id": message.user_id,
                 "channel_id": message.channel_id,
-                "provider": self.usage_provider_name,
+                "provider": self.usage_provider_key,
                 "model_id": self.usage_model_id,
                 "source_component": "agent",
             },
@@ -598,7 +581,7 @@ class ReflexionAgent(Agent):
         logger.info("executing_task", task=task)
 
         usage_context = {
-            "provider": self.usage_provider_name,
+            "provider": self.usage_provider_key,
             "model_id": self.usage_model_id,
             "source_component": "agent",
         }

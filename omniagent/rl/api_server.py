@@ -4,7 +4,7 @@ FastAPI proxy server between external agents and SGLang inference engine.
 Handles logprob collection, PRM scoring, training sample construction,
 and submission to the rollout worker.
 
-Only activates when model_provider is "vllm" or "sglang".
+Only activates when api_type is "vllm" or "sglang".
 
 """
 

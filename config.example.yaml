@@ -12,43 +12,40 @@ version: "0.1.0"
 work_dir: .
 
 providers:
+  # The provider map key is the provider identity used in Settings, usage rows,
+  # and pricing_overrides keys. Built-in keys such as deepseek/openai infer the
+  # same api_type automatically; only named OpenAI-compatible providers need api_type: openai-compatible.
   deepseek:
     api_key: ${DEEPSEEK_API_KEY:-}
     model_id: deepseek-chat
     api_url: https://api.deepseek.com/v1
-    provider_name: deepseek
 
   openai:
     api_key: ${OPENAI_API_KEY:-}
     model_id: gpt-4o
     api_url: https://api.openai.com/v1
-    provider_name: openai
 
   anthropic:
     api_key: ${ANTHROPIC_API_KEY:-}
     model_id: claude-sonnet-4-20250514
     api_url: null
-    provider_name: anthropic
 
   ollama:
     api_key: ""
     model_id: llama3
     api_url: null
-    provider_name: ollama
 
-  # OpenAI-compatible custom endpoint example.
-  custom:
+  # OpenAI-compatible endpoint example. Add more named entries with
+  # api_type: openai-compatible to connect multiple OpenAI-compatible providers.
+  my-openai-compatible:
+    api_type: openai-compatible
     api_key: ${CUSTOM_API_KEY:-}
     model_id: default
     api_url: ${CUSTOM_API_URL:-http://localhost:8000/v1}
-    # Usage/pricing provider identity. The pricing rule key is
-    # provider_name/model_id (for example: custom/default).
-    # Use a known catalog provider such as openai only when this endpoint truly
-    # proxies that provider; otherwise keep custom and add a pricing override.
-    provider_name: custom
 
 agent:
-  # Change this to one of: deepseek, openai, anthropic, ollama, custom.
+  # Select a provider key from the providers map, for example: deepseek, openai,
+  # anthropic, ollama, or my-openai-compatible.
   model_provider: deepseek
   model_id: deepseek-chat
   api_url: null
@@ -76,12 +73,11 @@ usage:
   pricing_catalog_url: https://models.dev/api.json
   pricing_cache_ttl_seconds: 900
   pricing_request_timeout_seconds: 2.0
-  # Manual rules are USD per million tokens and should be keyed by provider/model_id.
-  # The provider part is providers.<name>.provider_name when set, otherwise <name>.
+  # Manual rules are USD per million tokens and should be keyed by provider_key/model_id.
   pricing_overrides: {}
   # Example:
   # pricing_overrides:
-  #   custom/default:
+  #   my-openai-compatible/default:
   #     input: 0.15
   #     output: 0.60
   #     cache_read: 0.075

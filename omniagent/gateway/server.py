@@ -22,16 +22,23 @@ logger = get_logger(__name__)
 class GatewayServer:
     """WebSocket gateway server with optional channel support."""
 
-    def __init__(self, config: OmniAgentConfig, agent: Optional["ReflexionAgent"] = None):
+    def __init__(
+        self,
+        config: OmniAgentConfig,
+        agent: Optional["ReflexionAgent"] = None,
+        config_path: Optional[Path] = None,
+    ):
         """
         Initialize gateway server.
 
         Args:
             config: OmniAgent configuration
             agent: Optional ReflexionAgent instance for API endpoints
+            config_path: Config file path used for API save/reload
         """
         self.config = config
         self.agent = agent
+        self.config_path = config_path
         self.host = config.gateway.host
         self.port = config.gateway.port
         self._start_time = time.time()
@@ -66,6 +73,7 @@ class GatewayServer:
             agent=agent,
             session_manager=self.session_manager,
             config=self.config,
+            config_path=self.config_path,
         )
         self.app["api_ctx"] = self.ctx
         self.app.router.add_routes(create_api_router(self.ctx))
