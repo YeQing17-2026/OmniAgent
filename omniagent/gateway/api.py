@@ -1,5 +1,6 @@
 """REST API handlers for OmniAgent gateway."""
 
+import errno
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,8 +113,15 @@ async def update_config(request: web.Request) -> web.Response:
             status=400,
         )
 
-    # Deep merge
+    # Deep merge. pricing_overrides is a keyed rule map, so replace it as a
+    # whole when provided; otherwise removing a rate in the UI would leave stale
+    # nested keys behind from the old saved config.
     current = ctx.config.model_dump(mode="json")
+    usage_updates = updates.get("usage")
+    if isinstance(usage_updates, dict) and isinstance(usage_updates.get("pricing_overrides"), dict):
+        current_usage = current.get("usage")
+        if isinstance(current_usage, dict):
+            current_usage["pricing_overrides"] = {}
     merged = deep_merge(current, updates)
 
     try:
@@ -121,9 +129,21 @@ async def update_config(request: web.Request) -> web.Response:
     except Exception as e:
         return web.json_response({"error": f"Invalid config: {e}"}, status=400)
 
-    # Save to disk
+    # Save to disk when possible. Docker deployments commonly mount config.yaml
+    # read-only; in that case still apply the change to the live runtime and tell
+    # the UI it is not persisted across reload/restart.
+    persisted = True
+    warning = None
     try:
         save_config(new_config)
+    except OSError as e:
+        if e.errno in (errno.EROFS, errno.EACCES, errno.EPERM):
+            persisted = False
+            warning = "Config file is read-only; changes were applied to the running process only. Edit config.yaml and Reload from Disk to persist them."
+            logger.warning("config_save_read_only", error=str(e))
+        else:
+            logger.error("config_save_error", error=str(e))
+            return web.json_response({"error": f"Failed to save config: {e}"}, status=500)
     except Exception as e:
         logger.error("config_save_error", error=str(e))
         return web.json_response({"error": f"Failed to save config: {e}"}, status=500)
@@ -135,7 +155,14 @@ async def update_config(request: web.Request) -> web.Response:
 
     result = new_config.model_dump(mode="json")
     _mask_sensitive_fields(result)
-    return web.json_response({"status": "updated", "config": result})
+    response = {
+        "status": "updated" if persisted else "updated_runtime_only",
+        "persisted": persisted,
+        "config": result,
+    }
+    if warning:
+        response["warning"] = warning
+    return web.json_response(response)
 
 
 async def reload_config_handler(request: web.Request) -> web.Response:

@@ -3,7 +3,10 @@
 import os
 from typing import Any, Dict, List, Literal, Optional
 from pathlib import Path
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+_ALLOWED_PRICING_OVERRIDE_RATES = {"input", "output", "cache_read"}
 
 
 class ToolsConfig(BaseModel):
@@ -246,8 +249,29 @@ class UsageConfig(BaseModel):
     )
     pricing_overrides: Dict[str, Dict[str, float]] = Field(
         default_factory=dict,
-        description="Manual pricing overrides keyed by 'provider/model_id' or model_id; values are USD per million tokens"
+        description="Manual pricing overrides keyed by 'provider/model_id'. Supported rates are input, output, and cache_read, in USD per million tokens"
     )
+
+    @field_validator("pricing_overrides", mode="before")
+    @classmethod
+    def _sanitize_pricing_overrides(cls, value: Any) -> Any:
+        """Drop unsupported pricing keys before config is exposed or saved."""
+        if value is None or not isinstance(value, dict):
+            return value
+
+        sanitized: Dict[str, Any] = {}
+        for rule_key, rule in value.items():
+            if not isinstance(rule, dict):
+                sanitized[str(rule_key)] = rule
+                continue
+            filtered = {
+                rate_key: rate
+                for rate_key, rate in rule.items()
+                if rate_key in _ALLOWED_PRICING_OVERRIDE_RATES
+            }
+            if filtered:
+                sanitized[str(rule_key)] = filtered
+        return sanitized
 
 
 class ChannelsConfig(BaseModel):

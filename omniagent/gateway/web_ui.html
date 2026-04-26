@@ -467,6 +467,46 @@ body {
   padding: 1px 5px;
   border-radius: 4px;
 }
+.pricing-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.pricing-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.pricing-field label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.pricing-field input[type="number"] {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+.pricing-field input[type="number"]:focus { border-color: var(--accent); }
+.pricing-field small {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
 .secret-mask { color: var(--warning); }
 .form-actions-bar {
   display: flex; gap: 8px; padding: 16px 24px;
@@ -481,6 +521,7 @@ body {
   z-index: 1000;
 }
 .toast-success { background: rgba(78,205,196,0.9); color: #0f0f1a; }
+.toast-warning { background: rgba(255,230,109,0.95); color: #0f0f1a; }
 .toast-error { background: rgba(255,107,107,0.9); color: #fff; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -507,6 +548,72 @@ body {
 }
 .card .stat-row .stat-label { color: var(--text-secondary); }
 .card .stat-row .stat-value { color: var(--text-primary); font-weight: 500; }
+.usage-card { grid-column: 1 / -1; }
+.usage-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.usage-metric {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.usage-metric-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.usage-metric-value {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.usage-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.usage-table th,
+.usage-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.usage-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.usage-table tr:last-child td { border-bottom: 0; }
+.usage-table td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table td.model-cell { overflow-wrap: anywhere; }
+.usage-note {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.usage-empty {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -785,11 +892,11 @@ body {
         <div class="form-body">
           <div class="form-row">
             <label>Model Provider</label>
-            <input type="text" id="cfg-model-provider" placeholder="e.g. openai, deepseek">
+            <input type="text" id="cfg-model-provider" placeholder="e.g. openai, deepseek" oninput="panels.settings.renderPricingFromForm()">
           </div>
           <div class="form-row">
             <label>Model ID</label>
-            <input type="text" id="cfg-model-id" placeholder="e.g. gpt-4">
+            <input type="text" id="cfg-model-id" placeholder="e.g. gpt-4" oninput="panels.settings.renderPricingFromForm()">
           </div>
           <div class="form-row">
             <label>Temperature</label>
@@ -865,9 +972,40 @@ body {
         <summary>Providers</summary>
         <div class="form-body">
           <div class="provider-note">
-            File-mounted config mode: edit host <code>config.yaml</code> (mounted as <code>~/.omniagent/config.yaml</code>), then click <strong>Reload from Disk</strong>. API keys are masked here and should be supplied through the mounted config file or environment variables.
+            Config file mode: edit your active config file (normally <code>~/.omniagent/config.yaml</code>; Docker Compose mounts <code>./config.yaml</code> there), then click <strong>Reload from Disk</strong>. API keys are masked here and should be supplied through the config file or environment variables.
           </div>
           <div class="provider-list" id="providers-list"></div>
+        </div>
+      </details>
+      <details class="form-section" open>
+        <summary>Pricing</summary>
+        <div class="form-body">
+          <div class="provider-note">
+            Manual pricing override for the active <code>provider/model</code>. Values are USD per million tokens. Leave a field blank to omit that rate. Cache creation tokens, if a provider reports them, are estimated at the regular input rate.
+          </div>
+          <div class="pricing-editor">
+            <div class="provider-field">
+              <span class="provider-field-label">Pricing key</span>
+              <span class="provider-field-value" id="cfg-pricing-key">(load config first)</span>
+            </div>
+            <div class="pricing-grid">
+              <div class="pricing-field">
+                <label for="cfg-price-input">Input</label>
+                <input type="number" id="cfg-price-input" min="0" step="any" placeholder="e.g. 5">
+                <small>Uncached input tokens.</small>
+              </div>
+              <div class="pricing-field">
+                <label for="cfg-price-output">Output</label>
+                <input type="number" id="cfg-price-output" min="0" step="any" placeholder="e.g. 30">
+                <small>Generated output tokens.</small>
+              </div>
+              <div class="pricing-field">
+                <label for="cfg-price-cache-read">Cache Read</label>
+                <input type="number" id="cfg-price-cache-read" min="0" step="any" placeholder="e.g. 0.5">
+                <small>Cached input tokens / prompt cache reads.</small>
+              </div>
+            </div>
+          </div>
         </div>
       </details>
     </div>
@@ -947,6 +1085,103 @@ function timeAgo(isoStr) {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return hrs + 'h ago';
   return Math.floor(hrs / 24) + 'd ago';
+}
+
+function formatTokenCount(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return '0';
+  return Math.round(n).toLocaleString();
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined) return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  if (n > 0 && n < 0.1) return '<0.1%';
+  return n.toFixed(1) + '%';
+}
+
+function formatUsd(value) {
+  if (value === null || value === undefined) return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  if (n === 0) return '$0.00';
+  if (Math.abs(n) < 0.0001) return '$' + n.toFixed(8);
+  if (Math.abs(n) < 0.01) return '$' + n.toFixed(6);
+  return '$' + n.toFixed(4);
+}
+
+function usageCacheHitRate(row) {
+  const inputTokens = Number(row?.input_tokens || 0);
+  const cachedTokens = Number(row?.cached_input_tokens ?? row?.cache_read_input_tokens ?? 0);
+  if (!Number.isFinite(inputTokens) || inputTokens <= 0) return null;
+  if (!Number.isFinite(cachedTokens) || cachedTokens <= 0) return 0;
+  return Math.min(100, cachedTokens * 100 / inputTokens);
+}
+
+function formatPricingSource(pricing) {
+  if (!pricing) return 'unpriced';
+  if (pricing.source === 'config') return 'config rule';
+  return pricing.source || 'catalog';
+}
+
+const PRICING_RATE_KEYS = ['input', 'output', 'cache_read'];
+const PRICING_INPUT_IDS = {
+  input: 'cfg-price-input',
+  output: 'cfg-price-output',
+  cache_read: 'cfg-price-cache-read',
+};
+
+function getActivePricingIdentity(config) {
+  const providerName = config?.agent?.model_provider || '';
+  const provider = (config?.providers || {})[providerName] || {};
+  const modelId = provider.model_id || config?.agent?.model_id || '';
+  const usageName = provider.provider_name || providerName;
+  return {
+    providerName,
+    usageName,
+    modelId,
+    pricingKey: usageName && modelId ? `${usageName}/${modelId}` : '',
+  };
+}
+
+function getPricingIdentityFromSettingsForm(config) {
+  const draft = {
+    ...(config || {}),
+    agent: {
+      ...((config && config.agent) || {}),
+      model_provider: document.getElementById('cfg-model-provider')?.value || '',
+      model_id: document.getElementById('cfg-model-id')?.value || '',
+    },
+  };
+  return getActivePricingIdentity(draft);
+}
+
+function copyPricingRule(rule) {
+  const copied = {};
+  if (!rule || typeof rule !== 'object') return copied;
+  for (const key of PRICING_RATE_KEYS) {
+    const value = Number(rule[key]);
+    if (Number.isFinite(value) && value >= 0) copied[key] = value;
+  }
+  return copied;
+}
+
+function setPriceInput(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = value === null || value === undefined ? '' : String(value);
+}
+
+function readOptionalPrice(id, label) {
+  const el = document.getElementById(id);
+  const raw = (el?.value || '').trim();
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} price must be a non-negative number`);
+  }
+  return value;
 }
 
 // ── WebSocket ───────────────────────
@@ -1297,6 +1532,7 @@ const panels = {
           const apiUrl = p.api_url || '(default)';
           const modelId = p.model_id || '(not set)';
           const usageName = p.provider_name || name;
+          const pricingKey = p.model_id ? `${usageName}/${p.model_id}` : '(set model_id first)';
           return `
             <div class="provider-card ${isActive ? 'active' : ''}">
               <div class="provider-card-header">
@@ -1306,12 +1542,71 @@ const panels = {
               <div class="provider-field"><span class="provider-field-label">Model ID</span><span class="provider-field-value">${escapeHtml(modelId)}</span></div>
               <div class="provider-field"><span class="provider-field-label">API URL</span><span class="provider-field-value">${escapeHtml(apiUrl)}</span></div>
               <div class="provider-field"><span class="provider-field-label">Usage name</span><span class="provider-field-value">${escapeHtml(usageName)}</span></div>
+              <div class="provider-field"><span class="provider-field-label">Pricing key</span><span class="provider-field-value">${escapeHtml(pricingKey)}</span></div>
               <div class="provider-field"><span class="provider-field-label">API Key</span><span class="provider-field-value secret-mask">${escapeHtml(apiKeyState)}</span></div>
             </div>`;
         }).join('');
       }
+      this.renderPricing(c);
+    },
+    renderPricing(config) {
+      const identity = getActivePricingIdentity(config || {});
+      this.populatePricingFields(config, identity);
+    },
+    renderPricingFromForm() {
+      const current = this._raw || {};
+      const identity = getPricingIdentityFromSettingsForm(current);
+      this.populatePricingFields(current, identity);
+    },
+    populatePricingFields(config, identity) {
+      const pricingKeyEl = document.getElementById('cfg-pricing-key');
+      if (pricingKeyEl) pricingKeyEl.textContent = identity.pricingKey || '(set provider/model first)';
+
+      const overrides = config?.usage?.pricing_overrides || {};
+      const rule = identity.pricingKey ? copyPricingRule(overrides[identity.pricingKey]) : {};
+      for (const key of PRICING_RATE_KEYS) {
+        setPriceInput(PRICING_INPUT_IDS[key], rule[key]);
+      }
+    },
+    buildPricingOverridesForSave() {
+      const current = this._raw || {};
+      const existing = current.usage?.pricing_overrides || {};
+      const overrides = {};
+      for (const [key, rule] of Object.entries(existing)) {
+        const copied = copyPricingRule(rule);
+        if (Object.keys(copied).length) overrides[key] = copied;
+      }
+
+      const identity = getPricingIdentityFromSettingsForm(current);
+      if (!identity.pricingKey) return overrides;
+
+      const edited = {};
+      const labels = {
+        input: 'Input',
+        output: 'Output',
+        cache_read: 'Cache read',
+      };
+      for (const key of PRICING_RATE_KEYS) {
+        const value = readOptionalPrice(PRICING_INPUT_IDS[key], labels[key]);
+        if (value !== undefined) edited[key] = value;
+      }
+
+      if (Object.keys(edited).length) {
+        overrides[identity.pricingKey] = edited;
+      } else {
+        delete overrides[identity.pricingKey];
+      }
+      return overrides;
     },
     async save() {
+      let pricingOverrides;
+      try {
+        pricingOverrides = this.buildPricingOverridesForSave();
+      } catch (error) {
+        showToast(error.message || 'Invalid pricing value', 'error');
+        return;
+      }
+      const usage = { ...((this._raw && this._raw.usage) || {}), pricing_overrides: pricingOverrides };
       const updates = {
         agent: {
           model_provider: document.getElementById('cfg-model-provider').value || undefined,
@@ -1331,6 +1626,7 @@ const panels = {
           port: parseInt(document.getElementById('cfg-port').value) || undefined,
           session_timeout: parseInt(document.getElementById('cfg-session-timeout').value) || undefined,
         },
+        usage,
       };
       // Clean undefined values
       const clean = (obj) => {
@@ -1344,7 +1640,12 @@ const panels = {
       };
       const r = await api.patch('/config', clean(updates));
       if (r.ok) {
-        showToast('Settings saved', 'success');
+        if (r.data?.persisted === false) {
+          showToast(r.data.warning || 'Settings applied for this running process only', 'warning');
+        } else {
+          showToast('Settings saved', 'success');
+        }
+        if (r.data?.config) this._raw = r.data.config;
       } else {
         showToast(r.data.error || 'Save failed', 'error');
       }
@@ -1366,9 +1667,12 @@ const panels = {
     onActivate() { this.load(); this._interval = setInterval(() => this.load(), 10000); },
     onDeactivate() { clearInterval(this._interval); },
     async load() {
-      const r = await api.get('/health');
-      if (!r.ok) return;
-      const h = r.data;
+      const [healthResult, usageResult] = await Promise.all([
+        api.get('/health'),
+        api.get('/usage/summary'),
+      ]);
+      if (!healthResult.ok) return;
+      const h = healthResult.data;
       const cards = document.getElementById('dashboard-cards');
 
       let html = '';
@@ -1406,6 +1710,8 @@ const panels = {
         <div class="stat-row"><span class="stat-label">WebSocket</span><span class="stat-value">${ws && ws.readyState === WebSocket.OPEN ? 'Connected' : 'Disconnected'}</span></div>
       </div>`;
 
+      html += this.renderUsageCard(usageResult);
+
       // Channels card
       if (h.channels && Object.keys(h.channels).length) {
         html += '<div class="card"><h3>Channels</h3><div class="channel-list">';
@@ -1436,6 +1742,58 @@ const panels = {
       }
 
       cards.innerHTML = html;
+    },
+    renderUsageCard(result) {
+      let html = '<div class="card usage-card"><h3>Today\'s Usage by Provider / Model</h3>';
+      if (!result?.ok) {
+        return `${html}<div class="usage-empty">Usage summary is unavailable right now.</div></div>`;
+      }
+
+      const usage = result.data.usage || {};
+      const totals = usage.totals || {};
+      const rows = Array.isArray(usage.by_model) ? usage.by_model : [];
+      const pricedModels = Number(totals.priced_models || 0);
+      const unpricedModels = Number(totals.unpriced_models || 0);
+      const estimatedTotalCost = pricedModels > 0 ? formatUsd(totals.estimated_cost_usd) : '—';
+      const pricingUnit = usage.pricing?.unit || 'USD per million tokens';
+      const cacheHitRate = usageCacheHitRate(totals);
+
+      html += '<div class="usage-summary">';
+      html += `<div class="usage-metric"><div class="usage-metric-label">Total Tokens</div><div class="usage-metric-value">${formatTokenCount(totals.total_tokens)}</div></div>`;
+      html += `<div class="usage-metric"><div class="usage-metric-label">Input Tokens</div><div class="usage-metric-value">${formatTokenCount(totals.input_tokens)}</div></div>`;
+      html += `<div class="usage-metric"><div class="usage-metric-label">Cache Input</div><div class="usage-metric-value">${formatTokenCount(totals.cached_input_tokens)}</div></div>`;
+      html += `<div class="usage-metric"><div class="usage-metric-label">Output Tokens</div><div class="usage-metric-value">${formatTokenCount(totals.output_tokens)}</div></div>`;
+      html += `<div class="usage-metric"><div class="usage-metric-label">Cache Hit Rate</div><div class="usage-metric-value">${formatPercent(cacheHitRate)}</div></div>`;
+      html += `<div class="usage-metric"><div class="usage-metric-label">Estimated Cost</div><div class="usage-metric-value">${estimatedTotalCost}</div></div>`;
+      html += '</div>';
+
+      if (!rows.length) {
+        html += '<div class="usage-empty">No LLM usage has been recorded for today yet.</div>';
+      } else {
+        html += '<div class="usage-table-wrap"><table class="usage-table"><thead><tr>';
+        html += '<th>Provider</th><th>Model</th><th>Total</th><th>Input</th><th>Cache Input</th><th>Output</th><th>Cache Hit</th><th>Cost</th><th>Pricing</th>';
+        html += '</tr></thead><tbody>';
+        for (const row of rows) {
+          const rowCost = row.estimated_cost_usd === null || row.estimated_cost_usd === undefined ? '—' : formatUsd(row.estimated_cost_usd);
+          html += '<tr>';
+          html += `<td>${escapeHtml(row.provider || 'unknown')}</td>`;
+          html += `<td class="model-cell">${escapeHtml(row.model_id || 'unknown')}</td>`;
+          html += `<td class="numeric">${formatTokenCount(row.total_tokens)}</td>`;
+          html += `<td class="numeric">${formatTokenCount(row.input_tokens)}</td>`;
+          html += `<td class="numeric">${formatTokenCount(row.cached_input_tokens)}</td>`;
+          html += `<td class="numeric">${formatTokenCount(row.output_tokens)}</td>`;
+          html += `<td class="numeric">${formatPercent(usageCacheHitRate(row))}</td>`;
+          html += `<td class="numeric">${rowCost}</td>`;
+          html += `<td>${escapeHtml(formatPricingSource(row.pricing))}</td>`;
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+
+      const costScope = totals.estimated_cost_scope === 'returned_models' ? 'returned provider/model rows' : 'all matched rows';
+      html += `<div class="usage-note">Cost is estimated from manual <code>usage.pricing_overrides</code> provider/model rules first. Supported rates are <code>input</code>, <code>output</code>, and <code>cache_read</code>; otherwise OmniAgent uses the remote models.dev catalog only when provider/model or an unambiguous model_id can be matched. Coverage: ${pricedModels} priced, ${unpricedModels} unpriced. Scope: ${escapeHtml(costScope)}. Unit: ${escapeHtml(pricingUnit)}.</div>`;
+      html += '</div>';
+      return html;
     },
   },
 

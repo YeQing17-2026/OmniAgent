@@ -1,20 +1,12 @@
-# OmniAgent runtime config template used by both local Python and Docker deployments.
+# OmniAgent runtime config template.
 #
 # This file is safe to commit because secrets are referenced through environment
 # variables. Do not put real API keys in this example file.
 #
-# Docker Compose mode:
-#   cp config.example.yaml config.yaml
-#   edit config.yaml on the VM/host
-#   docker-compose.yml bind-mounts ./config.yaml to /home/omniagent/.omniagent/config.yaml:ro
-#   OmniAgent reads its default config path in Docker mode
-#   ensure config.yaml is readable by UID 10001
-#   click "Reload from Disk" in the Web UI after editing config.yaml
-#
 # Local Python mode examples:
-#   omniagent --config config.yaml serve --host 127.0.0.1 --port 18790
 #   mkdir -p $HOME/.omniagent && cp config.example.yaml $HOME/.omniagent/config.yaml
 #   omniagent serve
+#   omniagent --config config.yaml serve --host 127.0.0.1 --port 18790
 
 version: "0.1.0"
 work_dir: .
@@ -48,7 +40,11 @@ providers:
   custom:
     api_key: ${CUSTOM_API_KEY:-}
     model_id: default
-    api_url: ${CUSTOM_API_URL:-http://host.docker.internal:8000/v1}
+    api_url: ${CUSTOM_API_URL:-http://localhost:8000/v1}
+    # Usage/pricing provider identity. The pricing rule key is
+    # provider_name/model_id (for example: custom/default).
+    # Use a known catalog provider such as openai only when this endpoint truly
+    # proxies that provider; otherwise keep custom and add a pricing override.
     provider_name: custom
 
 agent:
@@ -63,8 +59,7 @@ agent:
   reflexion_max_attempts: 2
 
 gateway:
-  # Dockerfile passes --host 0.0.0.0 at startup for container networking.
-  # Keep this localhost value for local Python runs unless you need otherwise.
+  # Keep localhost unless you intentionally expose the gateway behind your own protection.
   host: 127.0.0.1
   port: 18790
   session_timeout: 3600
@@ -74,10 +69,22 @@ tools:
   profile: coding
 
 usage:
+  # Estimated costs use manual provider/model rules first, then the remote
+  # models.dev catalog. If provider/model is not found, bare model_id fallback is
+  # used only when the model_id has one unambiguous price in the catalog.
   pricing_catalog_enabled: true
   pricing_catalog_url: https://models.dev/api.json
   pricing_cache_ttl_seconds: 900
   pricing_request_timeout_seconds: 2.0
+  # Manual rules are USD per million tokens and should be keyed by provider/model_id.
+  # The provider part is providers.<name>.provider_name when set, otherwise <name>.
+  pricing_overrides: {}
+  # Example:
+  # pricing_overrides:
+  #   custom/default:
+  #     input: 0.15
+  #     output: 0.60
+  #     cache_read: 0.075
 
 enable_progressive_loading: true
 enable_parallel_execution: true

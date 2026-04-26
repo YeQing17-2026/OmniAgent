@@ -51,10 +51,9 @@ def _normalize_pricing_entry(
         "input": _as_float(cost.get("input")),
         "output": _as_float(cost.get("output")),
         "cache_read": _as_float(cost.get("cache_read")),
-        "cache_write": _as_float(cost.get("cache_write")),
         "source": source,
     }
-    if all(pricing[key] is None for key in ("input", "output", "cache_read", "cache_write")):
+    if all(pricing[key] is None for key in ("input", "output", "cache_read")):
         return None
     return pricing
 
@@ -106,6 +105,9 @@ def load_models_dev_pricing_catalog(
         cache_ttl_seconds=cache_ttl_seconds,
     )
     catalog: Dict[str, Dict[str, Any]] = {}
+    model_catalog: Dict[str, Dict[str, Any]] = {}
+    ambiguous_model_ids = set()
+    price_keys = ("input", "output", "cache_read")
     for provider_id, provider_data in payload.items():
         if not isinstance(provider_data, dict):
             continue
@@ -120,7 +122,20 @@ def load_models_dev_pricing_catalog(
                 continue
             pricing = _normalize_pricing_entry(cost, "models.dev")
             if pricing:
-                catalog[_pricing_key(str(provider_id), str(model_id))] = pricing
+                model_key = str(model_id)
+                catalog[_pricing_key(str(provider_id), model_key)] = pricing
+                existing = model_catalog.get(model_key)
+                if existing is None:
+                    model_catalog[model_key] = pricing
+                elif any(existing.get(key) != pricing.get(key) for key in price_keys):
+                    ambiguous_model_ids.add(model_key)
+
+    # Bare model_id fallback is intentionally conservative: if multiple
+    # providers publish different prices for the same model_id, do not guess.
+    # Users can still add an explicit provider/model override in config.
+    for model_id, pricing in model_catalog.items():
+        if model_id not in ambiguous_model_ids:
+            catalog.setdefault(model_id, pricing)
     return catalog
 
 
@@ -152,7 +167,7 @@ def _lookup_pricing(
                 normalized = _normalize_pricing_entry(override, "config")
                 if normalized:
                     merged = dict(merged or {})
-                    for price_key in ("input", "output", "cache_read", "cache_write"):
+                    for price_key in ("input", "output", "cache_read"):
                         if normalized.get(price_key) is not None:
                             merged[price_key] = normalized[price_key]
                     merged["source"] = "config"
@@ -193,21 +208,17 @@ def enrich_usage_summary_with_pricing(
             cache_read_rate = pricing.get("cache_read")
             if cache_read_rate is None:
                 cache_read_rate = input_rate
-            cache_write_rate = pricing.get("cache_write")
-            if cache_write_rate is None:
-                cache_write_rate = input_rate
 
-            input_cost = _cost_component(_as_int(row.get("input_tokens_uncached")), input_rate)
+            input_billable_tokens = _as_int(row.get("input_tokens_uncached")) + _as_int(
+                row.get("cache_creation_input_tokens")
+            )
+            input_cost = _cost_component(input_billable_tokens, input_rate)
             cache_read_cost = _cost_component(
                 _as_int(row.get("cache_read_input_tokens")) or _as_int(row.get("cached_input_tokens")),
                 cache_read_rate,
             )
-            cache_write_cost = _cost_component(
-                _as_int(row.get("cache_creation_input_tokens")),
-                cache_write_rate,
-            )
             output_cost = _cost_component(_as_int(row.get("output_tokens")), output_rate)
-            row_cost = input_cost + cache_read_cost + cache_write_cost + output_cost
+            row_cost = input_cost + cache_read_cost + output_cost
             total_cost += row_cost
             priced_models += 1
             row["pricing"] = {
@@ -215,7 +226,6 @@ def enrich_usage_summary_with_pricing(
                 "input_per_million_usd": input_rate,
                 "output_per_million_usd": output_rate,
                 "cache_read_per_million_usd": cache_read_rate,
-                "cache_write_per_million_usd": cache_write_rate,
             }
             row["estimated_cost_usd"] = round(row_cost, 8)
         else:
