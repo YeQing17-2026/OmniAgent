@@ -73,34 +73,7 @@ class ReflexionAgent(Agent):
 
         # Create LLM provider
         if llm_provider is None:
-            # Resolve provider-specific overrides
-            provider_name = config.agent.model_provider
-            provider_cfg = config.providers.get(provider_name) if config.providers else None
-
-            provider_api_url = config.agent.api_url
-            provider_model = config.agent.model_id
-            provider_api_key = ""
-
-            if provider_cfg:
-                if provider_cfg.api_url:
-                    provider_api_url = provider_cfg.api_url
-                if provider_cfg.model_id:
-                    provider_model = provider_cfg.model_id
-                provider_api_key = provider_cfg.api_key or ""
-
-            # Fallback to top-level api_key
-            if not provider_api_key:
-                provider_api_key = config.api_key or config.openai_api_key or ""
-
-            # Sync resolved model back to config so system prompt uses it
-            config.agent.model_id = provider_model
-
-            llm_provider = create_llm_provider(
-                provider=provider_name,
-                api_key=provider_api_key,
-                model=provider_model,
-                api_url=provider_api_url,
-            )
+            llm_provider = self._create_llm_from_config(config)
 
         self.llm = llm_provider
 
@@ -315,6 +288,32 @@ class ReflexionAgent(Agent):
             tools_count=len(self.tools),
             security_enabled=enable_security,
             native_fc=self.llm.supports_native_function_calling,
+        )
+
+    def _create_llm_from_config(self, config: OmniAgentConfig) -> LLMProvider:
+        provider_name = config.agent.model_provider
+        provider_cfg = config.providers.get(provider_name) if config.providers else None
+
+        provider_api_url = config.agent.api_url
+        provider_model = config.agent.model_id
+        provider_api_key = ""
+
+        if provider_cfg:
+            if provider_cfg.api_url:
+                provider_api_url = provider_cfg.api_url
+            if provider_cfg.model_id:
+                provider_model = provider_cfg.model_id
+            provider_api_key = provider_cfg.api_key or ""
+
+        if not provider_api_key:
+            provider_api_key = config.api_key or config.openai_api_key or ""
+
+        config.agent.model_id = provider_model
+        return create_llm_provider(
+            provider=provider_name,
+            api_key=provider_api_key,
+            model=provider_model,
+            api_url=provider_api_url,
         )
 
     def steer(self, message: str) -> None:
