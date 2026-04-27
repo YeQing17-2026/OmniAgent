@@ -301,14 +301,11 @@ class ReflexionAgent(Agent):
         if provider_cfg:
             if provider_cfg.api_url:
                 provider_api_url = provider_cfg.api_url
-            if provider_cfg.model_id:
-                provider_model = provider_cfg.model_id
             provider_api_key = provider_cfg.api_key or ""
 
         if not provider_api_key:
             provider_api_key = config.api_key or config.openai_api_key or ""
 
-        config.agent.model_id = provider_model
         return create_llm_provider(
             provider=provider_name,
             api_key=provider_api_key,
