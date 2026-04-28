@@ -126,7 +126,7 @@ messages = [system, user1, assistant1, user2]   ← passed in by ReflexionAgent
 # ~/.omniagent/config.yaml
 agent:
   model_provider: openai-codex
-  model_id: gpt-4o        # passed to thread/start as `model`
+  model_id: gpt-5.4       # passed to thread/start as `model`
 ```
 
 **Environment variables:**
