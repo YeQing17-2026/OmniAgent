@@ -3,6 +3,7 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, AsyncIterator
 
 import aiohttp
@@ -537,6 +538,52 @@ class OpenAILLMProvider(LLMProvider):
                     yield chunk.choices[0].delta.content
         finally:
             await client.close()
+
+
+class OpenAICodexLLMProvider(LLMProvider):
+    """OpenAI Codex provider via local codex app-server subprocess.
+
+    Delegates all LLM calls to a local `codex app-server` process over JSON-RPC
+    stdio. The codex process handles OAuth and Cloudflare internally.
+    """
+
+    def __init__(self, model: str = "gpt-5.4") -> None:
+        from omniagent.llm.codex_appserver import CodexAppServerLLMClient, CodexAppServerProcess
+        self._llm_client = CodexAppServerLLMClient(
+            process=CodexAppServerProcess(),
+            model=model,
+        )
+        self.model = model
+        logger.info("openai_codex_llm_initialized", model=model)
+
+    @property
+    def supports_native_function_calling(self) -> bool:
+        return False
+
+    async def chat(
+        self,
+        messages: List[LLMMessage],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        stream: bool = False,
+        tools: Optional[List[Dict]] = None,
+    ) -> LLMResponse:
+        text = await self._llm_client.chat(messages)
+        return LLMResponse(
+            content=text,
+            finish_reason="stop",
+            usage={},
+            metadata={"model": self.model, "provider": "openai-codex"},
+        )
+
+    async def chat_stream(
+        self,
+        messages: List[LLMMessage],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[str]:
+        text = await self._llm_client.chat(messages)
+        yield text
 
 
 class AnthropicLLMProvider(LLMProvider):
@@ -1120,6 +1167,10 @@ def create_llm_provider(
             api_url=api_url or default_url,
             api_key=api_key or "not-needed",
             model=model or "default",
+        )
+    elif provider == "openai-codex":
+        return OpenAICodexLLMProvider(
+            model=model or "gpt-5.4",
         )
     elif provider == "custom":
         if not api_url:

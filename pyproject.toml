@@ -61,6 +61,9 @@ target-version = ['py311']
 profile = "black"
 line_length = 100
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true

@@ -1209,6 +1209,7 @@ class SkillEvolutionManager:
             skill_compiled = False
             patch_written = False
             compiled = None
+            patch = None
 
             # Try skill compilation
             if pattern_recorded:
