@@ -182,3 +182,24 @@ async def test_llm_client_maps_system_to_developer_instructions():
     ]
     await llm_client.chat(messages)
     assert captured_thread_start.get("developerInstructions") == "Be concise."
+
+
+# ---------------------------------------------------------------------------
+# Task 4: OpenAICodexLLMProvider
+# ---------------------------------------------------------------------------
+
+async def test_openai_codex_provider_delegates_to_appserver():
+    """OpenAICodexLLMProvider.chat() delegates to CodexAppServerLLMClient and wraps result."""
+    from omniagent.agents.llm import OpenAICodexLLMProvider, LLMMessage
+
+    with patch("omniagent.llm.codex_appserver.CodexAppServerLLMClient.chat", new_callable=AsyncMock) as mock_chat:
+        mock_chat.return_value = "mocked response"
+
+        provider = OpenAICodexLLMProvider(model="gpt-5.4")
+        messages = [LLMMessage(role="user", content="Hello")]
+        result = await provider.chat(messages)
+
+        assert result.content == "mocked response"
+        assert result.finish_reason == "stop"
+        assert result.metadata["provider"] == "openai-codex"
+        mock_chat.assert_called_once_with(messages)
