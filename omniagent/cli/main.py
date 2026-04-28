@@ -6,6 +6,7 @@ from pathlib import Path
 from omniagent import __version__
 from omniagent.config import load_config, save_config, get_default_config
 from .chat import chat
+from .auth_commands import auth, run_openai_codex_login
 
 
 @click.group()
@@ -152,7 +153,6 @@ def onboard(ctx: click.Context) -> None:
     """Interactive setup wizard — configure API key, provider, and preferences."""
     import os
     import yaml
-    from pathlib import Path
 
     click.echo("╔══════════════════════════════════════════╗")
     click.echo("║         OmniAgent Setup Wizard            ║")
@@ -169,6 +169,7 @@ def onboard(ctx: click.Context) -> None:
         ("ollama", "Ollama (e.g., llama3)"),
         ("gemini", "Google Gemini (e.g., gemini-2.0-flash)"),
         ("openrouter", "OpenRouter (e.g., openai/gpt-4o)"),
+        ("openai-codex", "OpenAI Codex via ChatGPT OAuth (no API key needed)"),
         ("custom", "Custom OpenAI-compatible endpoint"),
     ]
 
@@ -208,17 +209,35 @@ def onboard(ctx: click.Context) -> None:
         "ollama": None,
         "gemini": "GOOGLE_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
+        "openai-codex": None,
         "custom": None,
     }
     env_var = env_var_map.get(selected_provider)
-    existing_key = config_obj.api_key or (os.getenv(env_var) if env_var else None)
 
-    if existing_key:
-        click.echo(f"  Current key: {'*' * min(8, len(existing_key))}... ({len(existing_key)} chars)")
-        use_existing = click.confirm("  Use existing key?", default=True)
-        api_key = existing_key if use_existing else click.prompt("  Enter API key")
+    # openai-codex uses OAuth — skip API key prompt and run login flow
+    if selected_provider == "openai-codex":
+        click.echo("\nStep 3/5: OAuth Login")
+        click.echo("-" * 40)
+        click.echo("  No API key needed — log in with your ChatGPT account.\n")
+
+        try:
+            _config_path = ctx.obj.get("config_path") or os.path.expanduser("~/.omniagent/config.yaml")
+            auth_path = Path(_config_path).parent / "auth-profiles.json"
+            creds = run_openai_codex_login(auth_path)
+            click.echo(f"  ✓ Login successful! Account: {creds.account_id}")
+            api_key = ""
+        except Exception as e:
+            click.echo(f"  ✗ OAuth login failed: {e}", err=True)
+            return
     else:
-        api_key = click.prompt("  Enter API key" if selected_provider != "ollama" else "  API key (usually empty for Ollama)", default="", show_default=False)
+        existing_key = config_obj.api_key or (os.getenv(env_var) if env_var else None)
+
+        if existing_key:
+            click.echo(f"  Current key: {'*' * min(8, len(existing_key))}... ({len(existing_key)} chars)")
+            use_existing = click.confirm("  Use existing key?", default=True)
+            api_key = existing_key if use_existing else click.prompt("  Enter API key")
+        else:
+            api_key = click.prompt("  Enter API key" if selected_provider != "ollama" else "  API key (usually empty for Ollama)", default="", show_default=False)
 
     # --- Step 4: Choose model ---
     click.echo(f"\nStep 4/5: Model ID")
@@ -231,6 +250,7 @@ def onboard(ctx: click.Context) -> None:
         "ollama": "llama3",
         "gemini": "gemini-2.0-flash",
         "openrouter": "openai/gpt-4o",
+        "openai-codex": "gpt-5.4",
     }
 
     if selected_provider == "custom":
@@ -368,8 +388,9 @@ def doctor(ctx: click.Context) -> None:
     click.echo("Diagnosis complete")
 
 
-# Register chat command
+# Register commands
 main.add_command(chat)
+main.add_command(auth)
 
 
 if __name__ == "__main__":
