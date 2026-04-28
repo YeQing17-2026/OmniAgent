@@ -60,3 +60,6 @@ MEMORY.md
 # Dev artifacts
 test-project/
 clean_test_project*.sh
+
+# Claude Code browser session state
+browser-state*.json
