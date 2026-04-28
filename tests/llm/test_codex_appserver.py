@@ -113,9 +113,9 @@ async def test_llm_client_returns_assistant_text():
     from omniagent.agents.llm import LLMMessage
 
     notifications = [
-        {"method": "item/message/delta", "params": {"content": [{"type": "output_text", "text": "Hello"}]}},
-        {"method": "item/message/delta", "params": {"content": [{"type": "output_text", "text": " world"}]}},
-        {"method": "turn/end", "params": {"turnId": "turn-1"}},
+        {"method": "item/agentMessage/delta", "params": {"delta": "Hello"}},
+        {"method": "item/agentMessage/delta", "params": {"delta": " world"}},
+        {"method": "turn/completed", "params": {"turnId": "turn-1"}},
     ]
     notif_iter = iter(notifications)
 
@@ -168,7 +168,7 @@ async def test_llm_client_maps_system_to_developer_instructions():
     mock_client.request = mock_request
 
     async def mock_get_notification(timeout: float = 60.0) -> Dict:
-        return {"method": "turn/end", "params": {"turnId": "turn-1"}}
+        return {"method": "turn/completed", "params": {"turnId": "turn-1"}}
 
     mock_client.get_notification = mock_get_notification
 

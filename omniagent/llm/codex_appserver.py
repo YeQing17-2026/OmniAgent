@@ -124,7 +124,7 @@ class CodexAppServerProcess:
             client.start_reader()
             await client.request("initialize", {
                 "clientInfo": {"name": "omniagent", "version": "1.0.0"},
-                "capabilities": {},
+                "capabilities": {"experimentalApi": True},
             })
             self._client = client
             logger.info("codex_appserver_ready")
@@ -166,7 +166,7 @@ class CodexAppServerLLMClient:
         thread_params: Dict[str, Any] = {
             "model": self._model,
             "cwd": os.getcwd(),
-            "sandbox": {"type": "dangerFullAccess"},
+            "sandbox": "danger-full-access",
             "approvalPolicy": "never",
             "approvalsReviewer": "user",
             "serviceName": "OmniAgent",
@@ -180,13 +180,18 @@ class CodexAppServerLLMClient:
         thread_id = thread_result["thread"]["id"]
         logger.debug("codex_thread_started", thread_id=thread_id)
 
-        user_input: Dict[str, Any] = {"type": "userText", "text": last_user_text}
+        prompt_text = last_user_text
         if history_parts:
-            user_input["context"] = "\n".join(history_parts)
+            prompt_text = "\n".join(history_parts) + "\n\nUSER: " + last_user_text
 
         await client.request("turn/start", {
             "threadId": thread_id,
-            "input": user_input,
+            "input": [{"type": "text", "text": prompt_text, "text_elements": []}],
+            "cwd": os.getcwd(),
+            "approvalPolicy": "never",
+            "approvalsReviewer": "user",
+            "sandboxPolicy": {"type": "dangerFullAccess"},
+            "model": self._model,
         })
 
         chunks: List[str] = []
@@ -197,14 +202,12 @@ class CodexAppServerLLMClient:
             method = notification.get("method", "")
             params = notification.get("params") or {}
 
-            if method == "turn/end":
+            if method == "turn/completed":
                 break
-            if method == "item/message/delta":
-                for item in (params.get("content") or []):
-                    if item.get("type") == "output_text":
-                        text = item.get("text", "")
-                        if text:
-                            chunks.append(text)
+            if method == "item/agentMessage/delta":
+                delta = params.get("delta", "")
+                if delta:
+                    chunks.append(delta)
 
         result = "".join(chunks)
         logger.debug("codex_turn_complete", text_length=len(result))
