@@ -134,3 +134,78 @@ class CodexAppServerProcess:
         if self._client:
             self._client.close()
             self._client = None
+
+
+_DEFAULT_TURN_TIMEOUT = float(os.environ.get("OMNIAGENT_CODEX_TURN_TIMEOUT", "60"))
+
+
+class CodexAppServerLLMClient:
+    """Stateless LLM client: each chat() starts a new codex thread, runs one turn, returns text."""
+
+    def __init__(self, process: CodexAppServerProcess, model: str = "gpt-5.4") -> None:
+        self._process = process
+        self._model = model
+
+    async def chat(self, messages: List[Any]) -> str:
+        client = await self._process.get_or_start()
+
+        system_content: Optional[str] = None
+        history_parts: List[str] = []
+        last_user_text = ""
+
+        for i, msg in enumerate(messages):
+            role = msg.role
+            content = msg.content or ""
+            if role == "system" and i == 0:
+                system_content = content
+            elif i == len(messages) - 1 and role == "user":
+                last_user_text = content
+            else:
+                history_parts.append(f"{role.upper()}: {content}")
+
+        thread_params: Dict[str, Any] = {
+            "model": self._model,
+            "cwd": os.getcwd(),
+            "sandbox": {"type": "dangerFullAccess"},
+            "approvalPolicy": "never",
+            "approvalsReviewer": "user",
+            "serviceName": "OmniAgent",
+            "experimentalRawEvents": True,
+            "persistExtendedHistory": False,
+        }
+        if system_content:
+            thread_params["developerInstructions"] = system_content
+
+        thread_result = await client.request("thread/start", thread_params)
+        thread_id = thread_result["thread"]["id"]
+        logger.debug("codex_thread_started", thread_id=thread_id)
+
+        user_input: Dict[str, Any] = {"type": "userText", "text": last_user_text}
+        if history_parts:
+            user_input["context"] = "\n".join(history_parts)
+
+        await client.request("turn/start", {
+            "threadId": thread_id,
+            "input": user_input,
+        })
+
+        chunks: List[str] = []
+        timeout = _DEFAULT_TURN_TIMEOUT
+
+        while True:
+            notification = await client.get_notification(timeout=timeout)
+            method = notification.get("method", "")
+            params = notification.get("params") or {}
+
+            if method == "turn/end":
+                break
+            if method == "item/message/delta":
+                for item in (params.get("content") or []):
+                    if item.get("type") == "output_text":
+                        text = item.get("text", "")
+                        if text:
+                            chunks.append(text)
+
+        result = "".join(chunks)
+        logger.debug("codex_turn_complete", text_length=len(result))
+        return result

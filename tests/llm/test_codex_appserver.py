@@ -1,8 +1,7 @@
 import json
 import os
 import pytest
-import pytest_asyncio
-from typing import Dict
+from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -102,3 +101,84 @@ async def test_process_reuses_existing_client():
             assert client1 is client2
             assert mock_exec.call_count == 1
             await process.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 3: CodexAppServerLLMClient
+# ---------------------------------------------------------------------------
+
+async def test_llm_client_returns_assistant_text():
+    """chat() collects item/message/delta notifications until turn/end and returns text."""
+    from omniagent.llm.codex_appserver import CodexAppServerLLMClient, CodexAppServerProcess, _RpcClient
+    from omniagent.agents.llm import LLMMessage
+
+    notifications = [
+        {"method": "item/message/delta", "params": {"content": [{"type": "output_text", "text": "Hello"}]}},
+        {"method": "item/message/delta", "params": {"content": [{"type": "output_text", "text": " world"}]}},
+        {"method": "turn/end", "params": {"turnId": "turn-1"}},
+    ]
+    notif_iter = iter(notifications)
+
+    async def mock_request(method: str, params: Any = None) -> Any:
+        if method == "initialize":
+            return {"userAgent": "codex/0.1.0"}
+        if method == "thread/start":
+            return {"thread": {"id": "thread-abc"}}
+        if method == "turn/start":
+            return {}
+        return {}
+
+    async def mock_get_notification(timeout: float = 60.0) -> Dict:
+        return next(notif_iter)
+
+    mock_client = MagicMock(spec=_RpcClient)
+    mock_client.request = mock_request
+    mock_client.get_notification = mock_get_notification
+
+    process = MagicMock(spec=CodexAppServerProcess)
+    process.get_or_start = AsyncMock(return_value=mock_client)
+
+    llm_client = CodexAppServerLLMClient(process, model="gpt-5.4")
+    messages = [
+        LLMMessage(role="system", content="You are helpful."),
+        LLMMessage(role="user", content="Say hello"),
+    ]
+    result = await llm_client.chat(messages)
+    assert result == "Hello world"
+
+
+async def test_llm_client_maps_system_to_developer_instructions():
+    """System message is passed as developerInstructions in thread/start params."""
+    from omniagent.llm.codex_appserver import CodexAppServerLLMClient, CodexAppServerProcess, _RpcClient
+    from omniagent.agents.llm import LLMMessage
+
+    captured_thread_start: Dict = {}
+
+    async def mock_request(method: str, params: Any = None) -> Any:
+        if method == "initialize":
+            return {"userAgent": "codex/0.1.0"}
+        if method == "thread/start":
+            captured_thread_start.update(params or {})
+            return {"thread": {"id": "t1"}}
+        if method == "turn/start":
+            return {}
+        return {}
+
+    mock_client = MagicMock(spec=_RpcClient)
+    mock_client.request = mock_request
+
+    async def mock_get_notification(timeout: float = 60.0) -> Dict:
+        return {"method": "turn/end", "params": {"turnId": "turn-1"}}
+
+    mock_client.get_notification = mock_get_notification
+
+    process = MagicMock(spec=CodexAppServerProcess)
+    process.get_or_start = AsyncMock(return_value=mock_client)
+
+    llm_client = CodexAppServerLLMClient(process, model="gpt-5.4")
+    messages = [
+        LLMMessage(role="system", content="Be concise."),
+        LLMMessage(role="user", content="Hi"),
+    ]
+    await llm_client.chat(messages)
+    assert captured_thread_start.get("developerInstructions") == "Be concise."
