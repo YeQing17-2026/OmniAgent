@@ -189,11 +189,19 @@ def onboard(ctx: click.Context) -> None:
     # --- Step 2: Provider-specific config ---
     provider_api_url = None
 
+    provider_wire_api = "chat"
+
     if selected_provider == "custom":
         click.echo(f"\nStep 2/5: Custom Provider Settings")
         click.echo("-" * 40)
         provider_api_url = click.prompt("  API Base URL", type=str)
         click.echo(f"  → {provider_api_url}")
+        click.echo("\n  Wire API format:")
+        click.echo("    1. Chat Completions (/v1/chat/completions)")
+        click.echo("    2. Responses API (/v1/responses)")
+        wire_choice = click.prompt("  Select wire API", type=int, default=1)
+        provider_wire_api = "responses" if wire_choice == 2 else "chat"
+        click.echo(f"  → {provider_wire_api}")
     else:
         click.echo(f"\nStep 2/5: (skipped — using {selected_desc} defaults)")
 
@@ -260,6 +268,8 @@ def onboard(ctx: click.Context) -> None:
     provider_data = {"api_key": api_key, "model_id": model_id}
     if provider_api_url:
         provider_data["api_url"] = provider_api_url
+    if selected_provider == "custom" and provider_wire_api != "chat":
+        provider_data["wire_api"] = provider_wire_api
 
     config_data = {
         "providers": {

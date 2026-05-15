@@ -1093,11 +1093,168 @@ class LocalInferenceLLMProvider(OpenAILLMProvider):
             await client.close()
 
 
+class ResponsesAPILLMProvider(LLMProvider):
+    """LLM provider that uses OpenAI Responses API (/v1/responses).
+
+    Used for proxies that only support the Responses API format (e.g. api-proxy
+    that translates Responses API to Claude Messages API). Must use streaming
+    since non-streaming returns empty output from such proxies.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-5.4",
+        api_url: Optional[str] = None,
+    ):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = api_url or "http://127.0.0.1:6060/v1"
+
+        logger.info("responses_api_llm_initialized", model=model, base_url=self.base_url)
+
+    @property
+    def supports_native_function_calling(self) -> bool:
+        return True
+
+    async def chat(
+        self,
+        messages: List[LLMMessage],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        stream: bool = False,
+        tools: Optional[List[Dict]] = None,
+    ) -> LLMResponse:
+        """Send request via OpenAI Responses API (always uses streaming internally)."""
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+
+        input_messages = []
+        for msg in messages:
+            m: Dict[str, Any] = {"role": msg.role, "content": msg.content or ""}
+            if msg.role == "tool":
+                m["tool_call_id"] = msg.tool_call_id
+                if msg.name:
+                    m["name"] = msg.name
+            if msg.tool_calls:
+                m["tool_calls"] = msg.tool_calls
+            input_messages.append(m)
+
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "input": input_messages,
+            "stream": True,
+            "temperature": temperature,
+        }
+        if max_tokens:
+            kwargs["max_output_tokens"] = max_tokens
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+
+        logger.debug(
+            "responses_api_request",
+            model=self.model,
+            messages_count=len(messages),
+            has_tools=tools is not None,
+        )
+
+        try:
+            resp_stream = await client.responses.create(**kwargs)
+
+            full_text = ""
+            tool_calls = None
+            usage = {}
+            finish_reason = "stop"
+
+            async for event in resp_stream:
+                event_type = getattr(event, "type", None)
+                if event_type == "response.output_text.delta":
+                    full_text += event.delta
+                elif event_type == "response.completed":
+                    response = event.response
+                    if response.output:
+                        for output_item in response.output:
+                            if getattr(output_item, "type", None) == "message":
+                                for content_block in getattr(output_item, "content", []):
+                                    if getattr(content_block, "type", None) == "output_text":
+                                        if not full_text:
+                                            full_text = content_block.text
+                            elif getattr(output_item, "type", None) == "function_call":
+                                if tool_calls is None:
+                                    tool_calls = []
+                                tool_calls.append({
+                                    "id": getattr(output_item, "call_id", output_item.id),
+                                    "type": "function",
+                                    "function": {
+                                        "name": output_item.name,
+                                        "arguments": output_item.arguments,
+                                    },
+                                })
+                    if response.usage:
+                        usage = {
+                            "prompt_tokens": getattr(response.usage, "input_tokens", 0),
+                            "completion_tokens": getattr(response.usage, "output_tokens", 0),
+                            "total_tokens": getattr(response.usage, "total_tokens", 0),
+                        }
+                    finish_reason = getattr(response, "stop_reason", "stop") or "stop"
+
+            logger.info(
+                "responses_api_response_received",
+                content_length=len(full_text),
+                finish_reason=finish_reason,
+                tool_calls_count=len(tool_calls) if tool_calls else 0,
+            )
+
+            return LLMResponse(
+                content=full_text,
+                finish_reason=finish_reason,
+                usage=usage,
+                tool_calls=tool_calls,
+                metadata={"model": self.model, "provider": "responses_api"},
+            )
+        finally:
+            await client.close()
+
+    async def chat_stream(
+        self,
+        messages: List[LLMMessage],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[str]:
+        """Stream chat response via Responses API."""
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+
+        input_messages = [
+            {"role": msg.role, "content": msg.content or ""}
+            for msg in messages
+        ]
+
+        try:
+            resp_stream = await client.responses.create(
+                model=self.model,
+                input=input_messages,
+                stream=True,
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+            )
+
+            async for event in resp_stream:
+                if getattr(event, "type", None) == "response.output_text.delta":
+                    yield event.delta
+        finally:
+            await client.close()
+
+
 def create_llm_provider(
     provider: str = "deepseek",
     api_key: str = "",
     model: str = "",
     api_url: str = None,
+    wire_api: str = "chat",
 ) -> LLMProvider:
     """Factory function to create an LLM provider instance."""
     provider = provider.lower()
@@ -1124,6 +1281,8 @@ def create_llm_provider(
     elif provider == "custom":
         if not api_url:
             raise ValueError("Custom provider requires api_url to be set (e.g. in config: providers.custom.api_url)")
+        if wire_api == "responses":
+            return ResponsesAPILLMProvider(api_key=api_key, model=model or "default", api_url=api_url)
         return OpenAILLMProvider(api_key=api_key, model=model or "default", api_url=api_url)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
