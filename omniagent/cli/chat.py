@@ -198,7 +198,10 @@ class ChatSession:
 
                     # Send to agent
                     console.print(f"[dim]{query_time}[/dim] [dim]Thinking...[/dim]")
-                    result = await self.agent.execute(user_input)
+                    result = await self.agent.execute(
+                        user_input,
+                        context={"session_id": self.session_id},
+                    )
 
                     # Sync to session
                     self._save_current_session(session)

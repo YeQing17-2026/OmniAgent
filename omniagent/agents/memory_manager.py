@@ -67,6 +67,11 @@ class MemorySearchManager:
         text_weight: float = 0.3,
         query_max_results: int = 6,
         query_min_score: float = 0.35,
+        mmr_enabled: bool = True,
+        mmr_lambda: float = 0.7,
+        fts5_tokenizer: str = "unicode61",
+        session_isolation_enabled: bool = False,
+        default_memory_visibility: str = "shared",
     ):
         self.workspace_dir = workspace_dir
         self.llm = llm_provider
@@ -80,12 +85,16 @@ class MemorySearchManager:
         self.text_weight = text_weight
         self.query_max_results = query_max_results
         self.query_min_score = query_min_score
+        self.mmr_enabled = mmr_enabled
+        self.mmr_lambda = mmr_lambda
+        self.session_isolation_enabled = session_isolation_enabled
+        self.default_memory_visibility = default_memory_visibility
         self._vector_available = llm_provider is not None
 
         # Storage
         if store_path is None:
             store_path = workspace_dir / ".omniagent" / "memory.db"
-        self.store = MemoryStore(store_path)
+        self.store = MemoryStore(store_path, fts5_tokenizer=fts5_tokenizer)
 
         logger.info(
             "memory_search_manager_initialized",
@@ -183,15 +192,15 @@ class MemorySearchManager:
     async def _embed_text(self, text: str) -> Optional[List[float]]:
         """Generate embedding for a text using the LLM API.
 
-        Uses the configured LLM provider to call an embedding-compatible endpoint.
-        Falls back to simple hash-based pseudo-embedding if API fails.
+        Uses the configured LLM provider only when it exposes an
+        embedding-compatible endpoint. Callers fall back to FTS-only search
+        when embedding is unavailable.
         """
         if not self.llm:
             return None
 
         try:
-            # Try to use the LLM API as an embedding provider
-            # Most OpenAI-compatible APIs support embeddings endpoint
+            # Some OpenAI-compatible APIs expose embeddings next to chat completions.
             import aiohttp
 
             # Build embedding request URL from chat completions URL
@@ -222,27 +231,73 @@ class MemorySearchManager:
 
         return None
 
-    def search(self, query: str, max_results: int = None, min_score: float = None) -> List[MemorySearchResult]:
+    def search(
+        self,
+        query: str,
+        max_results: int = None,
+        min_score: float = None,
+        session_id: Optional[str] = None,
+    ) -> List[MemorySearchResult]:
+        """Synchronous compatibility wrapper for memory search."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.search_async(query, max_results, min_score, session_id=session_id))
+
+        logger.warning("memory_search_sync_in_event_loop_falling_back_to_fts")
+        return self._search_fts_only(query, max_results, min_score, session_id=session_id)
+
+    async def search_async(
+        self,
+        query: str,
+        max_results: int = None,
+        min_score: float = None,
+        session_id: Optional[str] = None,
+    ) -> List[MemorySearchResult]:
         """Search memory using hybrid (BM25 + vector) or FTS-only mode.
 
        ts mergeHybridResults() + manager-search.ts search().
         """
         max_results = max_results or self.query_max_results
-        min_score = min_score or self.query_min_score
+        min_score = self.query_min_score if min_score is None else min_score
 
         # Always do keyword search
-        keyword_results = self.store.search_fts(query, limit=max_results * 4)
+        keyword_results = self.store.search_fts(
+            query,
+            limit=max_results * 4,
+            session_id=session_id,
+            session_isolation_enabled=self.session_isolation_enabled,
+        )
 
         if not self._vector_available or not self.hybrid_enabled:
             # FTS-only mode
-            return [
+            results = [
                 self._row_to_result(row, snippet_length=300)
                 for row in keyword_results
                 if row["score"] >= min_score
-            ][:max_results]
+            ]
+            if self.mmr_enabled:
+                results = self._mmr_rerank(results, lambda_param=self.mmr_lambda)
+            return results[:max_results]
 
         # Hybrid mode: combine BM25 + vector scores
-        vector_results = self._search_vector(query, limit=max_results * 4)
+        query_embedding = await self._embed_text(query)
+        if not query_embedding:
+            logger.warning("memory_query_embedding_unavailable_falling_back_to_fts")
+            results = [
+                self._row_to_result(row, snippet_length=300)
+                for row in keyword_results
+                if row["score"] >= min_score
+            ]
+            if self.mmr_enabled:
+                results = self._mmr_rerank(results, lambda_param=self.mmr_lambda)
+            return results[:max_results]
+
+        vector_results = self._search_vector(
+            query_embedding,
+            limit=max_results * 4,
+            session_id=session_id,
+        )
 
         # Merge by chunk ID
         merged = {}
@@ -259,7 +314,7 @@ class MemorySearchManager:
             merged[cid]["vector_score"] = row["score"]
 
         # Compute weighted scores
-        total_weight = self.vector_weight + self.text_weight
+        total_weight = self.vector_weight + self.text_weight or 1.0
         results = []
         for cid, entry in merged.items():
             score = (
@@ -269,15 +324,49 @@ class MemorySearchManager:
             if score >= min_score:
                 results.append(self._row_to_result(entry["data"], score, snippet_length=300))
 
-        # Sort by score descending, take top N
+        # Sort by score descending, then optionally rerank for diversity.
         results.sort(key=lambda r: r.score, reverse=True)
+        if self.mmr_enabled:
+            results = self._mmr_rerank(results, lambda_param=self.mmr_lambda)
         return results[:max_results]
 
-    def _search_vector(self, query_embedding: List[float], limit: int = 10) -> List[Dict]:
+    def _search_fts_only(
+        self,
+        query: str,
+        max_results: int = None,
+        min_score: float = None,
+        session_id: Optional[str] = None,
+    ) -> List[MemorySearchResult]:
+        max_results = max_results or self.query_max_results
+        min_score = self.query_min_score if min_score is None else min_score
+        rows = self.store.search_fts(
+            query,
+            limit=max_results * 4,
+            session_id=session_id,
+            session_isolation_enabled=self.session_isolation_enabled,
+        )
+        results = [
+            self._row_to_result(row, snippet_length=300)
+            for row in rows
+            if row["score"] >= min_score
+        ]
+        if self.mmr_enabled:
+            results = self._mmr_rerank(results, lambda_param=self.mmr_lambda)
+        return results[:max_results]
+
+    def _search_vector(
+        self,
+        query_embedding: List[float],
+        limit: int = 10,
+        session_id: Optional[str] = None,
+    ) -> List[Dict]:
         """Search using cosine similarity against stored embeddings."""
         import math
 
-        all_chunks = self.store.get_all_chunks_for_vector()
+        all_chunks = self.store.get_all_chunks_for_vector(
+            session_id=session_id,
+            session_isolation_enabled=self.session_isolation_enabled,
+        )
         if not all_chunks or not query_embedding:
             return []
 
@@ -299,7 +388,7 @@ class MemorySearchManager:
             similarity = dot_product / (query_norm * emb_norm)
 
             scored.append({
-                "chunk_id": chunk["id"],
+                "id": chunk["id"],
                 "path": chunk["path"],
                 "source": chunk.get("source", ""),
                 "start_line": chunk.get("start_line", 0),
@@ -312,26 +401,24 @@ class MemorySearchManager:
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:limit]
 
-    def _mmr_rerank(self, query_embedding: List[float], results: List[Dict], lambda_param: float = 0.7) -> List[Dict]:
+    def _mmr_rerank(
+        self,
+        results: List[MemorySearchResult],
+        lambda_param: float = 0.7,
+    ) -> List[MemorySearchResult]:
         """Maximal Marginal Relevance reranking for diversity."""
-        import math
-
         if not results or len(results) <= 1:
             return results
 
-        query_norm = math.sqrt(sum(x * x for x in query_embedding)) or 1.0
+        def text_similarity(left: MemorySearchResult, right: MemorySearchResult) -> float:
+            left_words = set((left.snippet or left.text).lower().split())
+            right_words = set((right.snippet or right.text).lower().split())
+            if not left_words or not right_words:
+                return 0.0
+            return len(left_words & right_words) / len(left_words | right_words)
 
-        def similarity(a: List[float], b: List[float]) -> float:
-            dot = sum(x * y for x, y in zip(a, b))
-            norm_a = math.sqrt(sum(x * x for x in a)) or 1.0
-            norm_b = math.sqrt(sum(x * x for x in b)) or 1.0
-            return dot / (norm_a * norm_b)
-
-        # Get all embeddings for selected results
         selected = []
         remaining = list(results)
-
-        # Select first (most relevant)
         selected.append(remaining.pop(0))
 
         while remaining and len(selected) < len(results):
@@ -340,14 +427,12 @@ class MemorySearchManager:
 
             for i, candidate in enumerate(remaining):
                 # Relevance to query
-                rel_score = candidate["score"]
+                rel_score = candidate.score
 
                 # Max similarity to already selected
                 max_sim = 0
                 for sel in selected:
-                    # Use cosine similarity on text as proxy (we don't have embeddings stored per result here)
-                    # Use score-based proxy
-                    sim = candidate["score"] * sel["score"]  # Simple proxy
+                    sim = text_similarity(candidate, sel)
                     max_sim = max(max_sim, sim)
 
                 mmr_score = lambda_param * rel_score - (1 - lambda_param) * max_sim
@@ -470,6 +555,7 @@ class MemorySearchTool(Tool):
         query = params.get("query", "")
         max_results = params.get("max_results", 6)
         min_score = params.get("min_score", 0.35)
+        session_id = params.get("_session_id")
 
         if not query:
             return ToolResult(
@@ -477,7 +563,12 @@ class MemorySearchTool(Tool):
             )
 
         try:
-            results = self.manager.search(query, max_results=max_results, min_score=min_score)
+            results = await self.manager.search_async(
+                query,
+                max_results=max_results,
+                min_score=min_score,
+                session_id=session_id,
+            )
             if not results:
                 return ToolResult(
                     success=True,

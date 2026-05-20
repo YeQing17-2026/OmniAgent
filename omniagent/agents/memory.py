@@ -8,6 +8,7 @@ Memory system for OmniAgent:
 """
 
 import hashlib
+import re
 import time
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -15,6 +16,53 @@ from typing import List, Optional, Tuple
 from omniagent.infra import get_logger
 
 logger = get_logger(__name__)
+
+
+FTS5_TOKENIZERS = {
+    "unicode61": "tokenize='unicode61'",
+    "trigram": "tokenize='trigram'",
+    "porter": "tokenize='porter unicode61'",
+    "ascii": "tokenize='ascii'",
+}
+
+
+def build_fts5_definition(tokenizer: str = "unicode61") -> str:
+    """Build the chunks_fts table DDL with a validated tokenizer."""
+    tokenizer_clause = FTS5_TOKENIZERS.get(tokenizer, FTS5_TOKENIZERS["unicode61"])
+    return f"""
+        CREATE VIRTUAL TABLE chunks_fts USING fts5(
+            text,
+            id UNINDEXED,
+            path UNINDEXED,
+            source UNINDEXED,
+            model UNINDEXED,
+            {tokenizer_clause}
+        )
+    """
+
+
+def is_memory_visible_to_session(
+    chunk_session_id: Optional[str],
+    chunk_is_shared: bool,
+    query_session_id: Optional[str],
+) -> bool:
+    """Return whether a memory chunk is visible to the query session."""
+    if chunk_is_shared:
+        return True
+    if not chunk_session_id:
+        return True
+    return chunk_session_id == query_session_id
+
+
+def normalize_fts_query(query: str) -> str:
+    """Normalize user text into an FTS5-safe MATCH expression."""
+    query = (query or "").strip()
+    if not query:
+        return query
+    if re.fullmatch(r"[\w\s]+", query, flags=re.UNICODE):
+        return query
+    terms = re.findall(r"\w+", query, flags=re.UNICODE)
+    return " ".join(terms) if terms else query.replace('"', '""')
 
 
 # Markdown chunking defaults
@@ -152,41 +200,39 @@ def list_memory_files(workspace_dir: Path, extra_paths: Optional[List[str]] = No
     seen = set()
     files = []
 
+    def add_file(path: Path) -> None:
+        try:
+            stat = path.stat()
+            identity = (stat.st_dev, stat.st_ino)
+        except OSError:
+            identity = str(path.resolve()).casefold()
+        if identity not in seen:
+            seen.add(identity)
+            files.append(path)
+
     # Root-level MEMORY.md files
     for name in ["MEMORY.md", "memory.md"]:
         p = workspace_dir / name
         if p.is_file():
-            real = str(p.resolve())
-            if real not in seen:
-                seen.add(real)
-                files.append(p)
+            add_file(p)
 
     # Recursive memory/ directory
     memory_dir = workspace_dir / "memory"
     if memory_dir.is_dir():
         for md_file in sorted(memory_dir.glob("**/*.md")):
             if md_file.is_file():
-                real = str(md_file.resolve())
-                if real not in seen:
-                    seen.add(real)
-                    files.append(md_file)
+                add_file(md_file)
 
     # Extra paths
     if extra_paths:
         for extra in extra_paths:
             p = Path(extra)
             if p.is_file() and p.suffix == ".md":
-                real = str(p.resolve())
-                if real not in seen:
-                    seen.add(real)
-                    files.append(p)
+                add_file(p)
             elif p.is_dir():
                 for md_file in sorted(p.glob("**/*.md")):
                     if md_file.is_file():
-                        real = str(md_file.resolve())
-                        if real not in seen:
-                            seen.add(real)
-                            files.append(md_file)
+                        add_file(md_file)
 
     return files
 
@@ -241,11 +287,14 @@ CREATE TABLE IF NOT EXISTS chunks (
     model TEXT NOT NULL,
     text TEXT NOT NULL,
     updated_at INTEGER NOT NULL,
-    embedding TEXT
+    embedding TEXT,
+    session_id TEXT,
+    is_shared INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
 CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
+CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id);
 """
 
 
@@ -255,11 +304,16 @@ class MemoryStore:
     Provides the low-level storage operations for the memory system.
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, fts5_tokenizer: str = "unicode61"):
         self.db_path = db_path
+        self.fts5_tokenizer = self._normalize_fts5_tokenizer(fts5_tokenizer)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
         logger.info("memory_store_initialized", db_path=str(db_path))
+
+    @staticmethod
+    def _normalize_fts5_tokenizer(tokenizer: str) -> str:
+        return tokenizer if tokenizer in FTS5_TOKENIZERS else "unicode61"
 
     def _init_db(self) -> None:
         """Initialize database schema."""
@@ -268,19 +322,6 @@ class MemoryStore:
         conn = sqlite3.connect(str(self.db_path))
         try:
             conn.executescript(_SCHEMA_SQL)
-            # Create FTS5 table
-            try:
-                conn.execute("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-                        text,
-                        id UNINDEXED,
-                        path UNINDEXED,
-                        source UNINDEXED,
-                        model UNINDEXED
-                    )
-                """)
-            except sqlite3.OperationalError as e:
-                logger.warning("fts5_creation_failed", error=str(e))
 
             # Migration: add embedding column if missing (existing DBs)
             try:
@@ -289,9 +330,59 @@ class MemoryStore:
                 logger.info("memory_db_migration_adding_embedding_column")
                 conn.execute("ALTER TABLE chunks ADD COLUMN embedding TEXT")
 
+            # Migrations: session visibility columns for existing DBs.
+            try:
+                conn.execute("SELECT session_id FROM chunks LIMIT 0")
+            except sqlite3.OperationalError:
+                logger.info("memory_db_migration_adding_session_id_column")
+                conn.execute("ALTER TABLE chunks ADD COLUMN session_id TEXT")
+            try:
+                conn.execute("SELECT is_shared FROM chunks LIMIT 0")
+            except sqlite3.OperationalError:
+                logger.info("memory_db_migration_adding_is_shared_column")
+                conn.execute("ALTER TABLE chunks ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 1")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id)")
+
+            self._ensure_fts5_table(conn)
             conn.commit()
         finally:
             conn.close()
+
+    def _ensure_fts5_table(self, conn) -> None:
+        """Create or rebuild the FTS5 table when the configured tokenizer changes."""
+        import sqlite3
+
+        table_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chunks_fts'"
+        ).fetchone()
+        current_tokenizer = None
+        if table_exists:
+            row = conn.execute("SELECT value FROM meta WHERE key = ?", ("fts5_tokenizer",)).fetchone()
+            current_tokenizer = row[0] if row else None
+
+        if table_exists and current_tokenizer == self.fts5_tokenizer:
+            return
+
+        if table_exists:
+            logger.info(
+                "memory_fts5_tokenizer_migrating",
+                old_tokenizer=current_tokenizer,
+                new_tokenizer=self.fts5_tokenizer,
+            )
+            conn.execute("DROP TABLE IF EXISTS chunks_fts")
+
+        try:
+            conn.execute(build_fts5_definition(self.fts5_tokenizer))
+            conn.execute(
+                """INSERT INTO chunks_fts (text, id, path, source, model)
+                   SELECT text, id, path, source, model FROM chunks"""
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                ("fts5_tokenizer", self.fts5_tokenizer),
+            )
+        except sqlite3.OperationalError as e:
+            logger.warning("fts5_creation_failed", error=str(e))
 
     def _get_conn(self):
         import sqlite3
@@ -371,16 +462,32 @@ class MemoryStore:
         chunk_hash: str,
         model: str,
         text: str,
+        session_id: Optional[str] = None,
+        is_shared: bool = True,
     ) -> None:
         """Insert or update a chunk."""
         conn = self._get_conn()
         now = int(time.time())
+        stored_session_id = None if is_shared else session_id
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO chunks
-                   (id, path, source, start_line, end_line, hash, model, text, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (chunk_id, path, source, start_line, end_line, chunk_hash, model, text, now),
+                   (id, path, source, start_line, end_line, hash, model, text,
+                    updated_at, session_id, is_shared)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    chunk_id,
+                    path,
+                    source,
+                    start_line,
+                    end_line,
+                    chunk_hash,
+                    model,
+                    text,
+                    now,
+                    stored_session_id,
+                    1 if is_shared else 0,
+                ),
             )
             # Also insert into FTS5
             try:
@@ -404,7 +511,14 @@ class MemoryStore:
         finally:
             conn.close()
 
-    def search_fts(self, query: str, limit: int = 6) -> List[dict]:
+    def search_fts(
+        self,
+        query: str,
+        limit: int = 6,
+        session_id: Optional[str] = None,
+        include_shared: bool = True,
+        session_isolation_enabled: bool = False,
+    ) -> List[dict]:
         """Full-text search using FTS5.
 
        ts searchKeyword().
@@ -412,19 +526,38 @@ class MemoryStore:
         """
         conn = self._get_conn()
         try:
+            fts_query = normalize_fts_query(query)
+            if not fts_query:
+                return []
             # JOIN chunks_fts with chunks to get full columns.
             # FTS5 only stores indexed text + UNINDEXED aux columns,
             # so start_line/end_line/text must come from the chunks table.
+            visibility_clause = ""
+            params = [fts_query]
+            if session_isolation_enabled:
+                if session_id:
+                    if include_shared:
+                        visibility_clause = (
+                            " AND (ch.is_shared = 1 OR ch.session_id IS NULL OR ch.session_id = ?)"
+                        )
+                        params.append(session_id)
+                    else:
+                        visibility_clause = " AND ch.session_id = ?"
+                        params.append(session_id)
+                else:
+                    visibility_clause = " AND (ch.is_shared = 1 OR ch.session_id IS NULL)"
+            params.append(limit)
             rows = conn.execute(
-                """SELECT ch.id, ch.path, ch.start_line, ch.end_line,
+                f"""SELECT ch.id, ch.path, ch.start_line, ch.end_line,
                           ch.text, ch.source, ch.model,
                           bm25(chunks_fts) AS rank
                    FROM chunks_fts
                    JOIN chunks ch ON chunks_fts.id = ch.id
                    WHERE chunks_fts MATCH ?
+                   {visibility_clause}
                    ORDER BY rank
                    LIMIT ?""",
-                (query, limit),
+                params,
             ).fetchall()
             results = []
             for row in rows:
@@ -440,14 +573,35 @@ class MemoryStore:
         finally:
             conn.close()
 
-    def get_all_chunks_for_vector(self) -> List[dict]:
+    def get_all_chunks_for_vector(
+        self,
+        session_id: Optional[str] = None,
+        include_shared: bool = True,
+        session_isolation_enabled: bool = False,
+    ) -> List[dict]:
         """Get all chunks with embedding for vector search."""
         conn = self._get_conn()
         try:
+            visibility_clause = ""
+            params = []
+            if session_isolation_enabled:
+                if session_id:
+                    if include_shared:
+                        visibility_clause = (
+                            " AND (is_shared = 1 OR session_id IS NULL OR session_id = ?)"
+                        )
+                        params.append(session_id)
+                    else:
+                        visibility_clause = " AND session_id = ?"
+                        params.append(session_id)
+                else:
+                    visibility_clause = " AND (is_shared = 1 OR session_id IS NULL)"
             rows = conn.execute(
-                """SELECT id, path, start_line, end_line, text, source, model, embedding
+                f"""SELECT id, path, start_line, end_line, text, source, model, embedding
                    FROM chunks
-                   WHERE embedding IS NOT NULL"""
+                   WHERE embedding IS NOT NULL
+                   {visibility_clause}""",
+                params,
             ).fetchall()
             return [dict(row) for row in rows]
         finally:

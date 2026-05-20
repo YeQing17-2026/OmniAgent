@@ -177,11 +177,27 @@ class MemorySearchConfig(BaseModel):
         default="all-MiniLM-L6-v2",
         description="Sentence-transformers model name for local embeddings"
     )
+    mmr_enabled: bool = Field(
+        default=True,
+        description="Enable Maximal Marginal Relevance reranking"
+    )
     mmr_lambda: float = Field(
         default=0.7,
         ge=0.0,
         le=1.0,
         description="Lambda parameter for Maximal Marginal Relevance diversity"
+    )
+    fts5_tokenizer: Literal["unicode61", "trigram", "porter", "ascii"] = Field(
+        default="unicode61",
+        description="SQLite FTS5 tokenizer for memory search"
+    )
+    session_isolation_enabled: bool = Field(
+        default=False,
+        description="Enable session-level memory visibility filtering"
+    )
+    default_memory_visibility: Literal["shared", "session_only"] = Field(
+        default="shared",
+        description="Default visibility for new memory entries"
     )
     temporal_decay_hours: float = Field(
         default=168.0,
