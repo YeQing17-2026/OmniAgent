@@ -25,6 +25,8 @@ FTS5_TOKENIZERS = {
     "ascii": "tokenize='ascii'",
 }
 
+FTS5_QUERY_OPERATORS = {"AND", "OR", "NOT", "NEAR"}
+
 
 def build_fts5_definition(tokenizer: str = "unicode61") -> str:
     """Build the chunks_fts table DDL with a validated tokenizer."""
@@ -59,10 +61,11 @@ def normalize_fts_query(query: str) -> str:
     query = (query or "").strip()
     if not query:
         return query
-    if re.fullmatch(r"[\w\s]+", query, flags=re.UNICODE):
-        return query
     terms = re.findall(r"\w+", query, flags=re.UNICODE)
-    return " ".join(terms) if terms else query.replace('"', '""')
+    has_operator_word = any(term.upper() in FTS5_QUERY_OPERATORS for term in terms)
+    if re.fullmatch(r"[\w\s]+", query, flags=re.UNICODE) and not has_operator_word:
+        return query
+    return " ".join(f'"{term}"' for term in terms) if terms else query.replace('"', '""')
 
 
 # Markdown chunking defaults

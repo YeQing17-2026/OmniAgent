@@ -243,6 +243,24 @@ def test_fts5_search_handles_hyphenated_query(tmp_path):
     assert [row["id"] for row in rows] == ["hyphen"]
 
 
+def test_fts5_search_treats_operator_words_as_natural_language(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.upsert_chunk(
+        chunk_id="operators",
+        path="MEMORY.md",
+        source="memory",
+        start_line=1,
+        end_line=1,
+        chunk_hash="hash-operators",
+        model="test",
+        text="Literal memory queries: blue NOT lantern, blue OR lantern, blue AND lantern, blue NEAR lantern.",
+    )
+
+    for query in ["blue NOT lantern", "blue OR lantern", "blue AND lantern", "blue NEAR lantern"]:
+        rows = store.search_fts(query, limit=5)
+        assert [row["id"] for row in rows] == ["operators"]
+
+
 def test_deepseek_tool_call_messages_preserve_reasoning_content():
     provider = DeepSeekLLMProvider(
         api_url="https://api.deepseek.com/v1/chat/completions",
