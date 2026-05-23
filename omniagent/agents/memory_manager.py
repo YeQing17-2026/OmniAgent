@@ -573,15 +573,26 @@ class MemorySearchTool(Tool):
                 return ToolResult(
                     success=True,
                     output="No relevant memories found.",
+                    metadata={"context_hints": []},
                 )
 
             parts = []
+            context_hints = []
             for r in results:
                 citation = f"Source: {r.path}#L{r.start_line}-L{r.end_line}"
                 parts.append(f"{r.snippet}\n\n{citation}")
+                context_hints.append({
+                    "path": r.path,
+                    "snippet": r.snippet,
+                    "score": r.score,
+                })
 
             output = "\n\n---\n\n".join(parts)
-            return ToolResult(success=True, output=output)
+            return ToolResult(
+                success=True,
+                output=output,
+                metadata={"context_hints": context_hints},
+            )
         except Exception as e:
             return ToolResult(success=False, output="", error=str(e))
 

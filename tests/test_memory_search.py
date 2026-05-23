@@ -12,6 +12,7 @@ from omniagent.agents.memory_manager import (
     MemorySearchResult,
     MemorySearchTool,
 )
+from omniagent.agents.reflexion import ReflexionAgent
 
 
 def test_list_memory_files_deduplicates_same_file_identity(tmp_path):
@@ -374,5 +375,50 @@ def test_memory_search_tool_passes_hidden_session_id(tmp_path):
 
         assert result.success is True
         assert manager.captured_session_id == "session-a"
+
+    asyncio.run(run())
+
+
+def test_reflexion_memory_search_executes_manager_once():
+    class CountingManager:
+        def __init__(self):
+            self.calls = 0
+
+        async def search_async(self, query, max_results=None, min_score=None, session_id=None):
+            self.calls += 1
+            assert query == "visibility"
+            assert session_id == "session-a"
+            return [
+                MemorySearchResult(
+                    chunk_id="chunk-a",
+                    path="MEMORY.md",
+                    source="memory",
+                    start_line=1,
+                    end_line=2,
+                    text="visibility token",
+                    score=0.91,
+                    snippet="visibility token",
+                )
+            ]
+
+    async def run():
+        manager = CountingManager()
+        agent = object.__new__(ReflexionAgent)
+        agent.memory_manager = manager
+        agent._current_session_id = "session-a"
+        agent.tools = {"memory_search": MemorySearchTool(manager)}
+        agent.enable_security = False
+        agent._context_hints = []
+
+        output = await agent._execute_tool({
+            "tool": "memory_search",
+            "params": {"query": "visibility", "max_results": 3},
+        })
+
+        assert manager.calls == 1
+        assert "visibility token" in output
+        assert agent._context_hints == [
+            {"path": "MEMORY.md", "snippet": "visibility token", "score": 0.91}
+        ]
 
     asyncio.run(run())
