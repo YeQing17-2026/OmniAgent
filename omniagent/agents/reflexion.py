@@ -196,6 +196,11 @@ class ReflexionAgent(Agent):
                 text_weight=config.memory.hybrid_text_weight,
                 query_max_results=config.memory.query_max_results,
                 query_min_score=config.memory.query_min_score,
+                mmr_enabled=config.memory.mmr_enabled,
+                mmr_lambda=config.memory.mmr_lambda,
+                fts5_tokenizer=config.memory.fts5_tokenizer,
+                session_isolation_enabled=config.memory.session_isolation_enabled,
+                default_memory_visibility=config.memory.default_memory_visibility,
             )
             # Register memory tools
             self.register_tool(MemorySearchTool(self.memory_manager))
@@ -429,7 +434,7 @@ class ReflexionAgent(Agent):
                 logger.warning("memory_sync_failed", error=str(e))
 
         # Execute task
-        result = await self.execute(message.content)
+        result = await self.execute(message.content, context={"session_id": message.session_id})
 
         # Create response
         return OutgoingMessage(
@@ -470,6 +475,7 @@ class ReflexionAgent(Agent):
         self._sentinel_activated = False
         self._tool_name_history = []
         self._result_hashes = []
+        self._current_session_id = (context or {}).get("session_id")
 
         # ── Feedback Detection ──────────────────────────────────────
         # If the user's message looks like feedback on a prior execution
@@ -779,6 +785,7 @@ class ReflexionAgent(Agent):
                             role="assistant",
                             content=content if content else None,
                             tool_calls=response.tool_calls,
+                            reasoning_content=response.reasoning_content,
                             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         )
                         messages.append(assistant_msg)
@@ -811,6 +818,7 @@ class ReflexionAgent(Agent):
                             role="assistant",
                             content=content if content else "",
                             tool_calls=response.tool_calls,
+                            reasoning_content=response.reasoning_content,
                             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         )
                         messages.append(assistant_msg)
@@ -1808,22 +1816,8 @@ Do NOT write code or tool calls. Only provide the reflection."""
         params = action["params"]
 
         logger.info("executing_tool", tool=tool_name, params=params)
-
-        # Capture memory search results for L0 hints injection
-        if tool_name == "memory_search" and self.memory_manager:
-            try:
-                raw_results = self.memory_manager.search(
-                    query=params.get("query", ""),
-                    max_results=params.get("max_results", 6),
-                )
-                if raw_results:
-                    self._context_hints = [
-                        {"path": r.path, "snippet": r.snippet, "score": r.score}
-                        for r in raw_results
-                    ]
-                    logger.debug("context_hints_captured", count=len(self._context_hints))
-            except Exception as e:
-                logger.warning("context_hints_capture_failed", error=str(e))
+        if tool_name == "memory_search" and getattr(self, "_current_session_id", None):
+            params = {**params, "_session_id": self._current_session_id}
 
         # Check if tool exists
         if tool_name not in self.tools:
@@ -1936,6 +1930,12 @@ Do NOT write code or tool calls. Only provide the reflection."""
             # Execute tool
             tool = self.tools[tool_name]
             result = await tool.execute(params)
+
+            if tool_name == "memory_search" and result.success:
+                context_hints = result.metadata.get("context_hints", [])
+                if isinstance(context_hints, list):
+                    self._context_hints = context_hints
+                    logger.debug("context_hints_captured", count=len(self._context_hints))
 
             # Log successful execution
             if self.enable_security:

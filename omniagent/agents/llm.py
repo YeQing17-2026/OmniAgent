@@ -22,6 +22,7 @@ class LLMMessage:
     tool_call_id: Optional[str] = None  # For role="tool" messages
     name: Optional[str] = None  # Tool name for tool messages
     timestamp: Optional[str] = None  # ISO format timestamp for user/assistant messages
+    reasoning_content: Optional[str] = None  # DeepSeek thinking-mode continuation
 
 
 @dataclass
@@ -34,6 +35,7 @@ class LLMResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
     tool_calls: Optional[List[Dict]] = None  # OpenAI-style tool_calls
     logprobs: Optional[List[Dict[str, Any]]] = None  # Per-token logprobs (vLLM/SGLang)
+    reasoning_content: Optional[str] = None  # Provider-private thinking content
 
 
 class LLMProvider(ABC):
@@ -179,11 +181,14 @@ class DeepSeekLLMProvider(LLMProvider):
                     "tool_call_id": msg.tool_call_id,
                 })
             elif msg.role == "assistant" and msg.tool_calls:
-                api_messages.append({
+                assistant_msg = {
                     "role": "assistant",
                     "content": msg.content or None,
                     "tool_calls": msg.tool_calls,
-                })
+                }
+                if msg.reasoning_content:
+                    assistant_msg["reasoning_content"] = msg.reasoning_content
+                api_messages.append(assistant_msg)
             elif msg.role == "compaction_summary":
                 api_messages.append({
                     "role": "user",
@@ -252,8 +257,7 @@ class DeepSeekLLMProvider(LLMProvider):
                 choice = data["choices"][0]
                 message = choice["message"]
                 content = message.get("content") or ""
-                # Discard reasoning_content (DeepSeek thinking tokens)
-                # Some providers include this; it should not be exposed to the user
+                reasoning_content = message.get("reasoning_content")
                 finish_reason = choice.get("finish_reason")
                 usage = data.get("usage", {})
 
@@ -276,6 +280,7 @@ class DeepSeekLLMProvider(LLMProvider):
                     usage=usage,
                     metadata={"model": self.model},
                     tool_calls=tool_calls,
+                    reasoning_content=reasoning_content,
                 )
 
     async def chat_stream(
