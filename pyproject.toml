@@ -35,6 +35,7 @@ dependencies = [
 
 [project.optional-dependencies]
 feishu = ["lark-oapi>=1.5.0"]
+embeddings = ["fastembed>=0.3"]
 dev = [
     "pytest>=7.4.3",
     "pytest-asyncio>=0.21.1",
