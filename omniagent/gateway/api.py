@@ -10,6 +10,7 @@ from aiohttp import web
 from omniagent.config.loader import DEFAULT_CONFIG_PATH, deep_merge, load_config, save_config
 from omniagent.infra import get_logger
 from omniagent.config.models import OmniAgentConfig
+from omniagent.gateway.errors import public_error_message, public_json_error
 
 if TYPE_CHECKING:
     from omniagent.agents.reflexion import ReflexionAgent
@@ -112,14 +113,14 @@ async def update_config(request: web.Request) -> web.Response:
     try:
         new_config = OmniAgentConfig(**merged)
     except Exception as e:
-        return web.json_response({"error": f"Invalid config: {e}"}, status=400)
+        return public_json_error(e, status=400, prefix="Invalid config")
 
     # Save to disk
     try:
         save_config(new_config)
     except Exception as e:
         logger.error("config_save_error", error=str(e))
-        return web.json_response({"error": f"Failed to save config: {e}"}, status=500)
+        return public_json_error(e, status=500, prefix="Failed to save config")
 
     # Update in-memory
     ctx.config = new_config
@@ -140,7 +141,7 @@ async def reload_config_handler(request: web.Request) -> web.Response:
     try:
         reloaded = load_config(DEFAULT_CONFIG_PATH)
     except Exception as e:
-        return web.json_response({"error": f"Failed to reload: {e}"}, status=500)
+        return public_json_error(e, status=500, prefix="Failed to reload")
 
     ctx.config = reloaded
     if ctx.agent is not None:
@@ -310,7 +311,7 @@ async def get_health(request: web.Request) -> web.Response:
             "current_iteration": agent_state.iteration,
             "pending_tool_calls": list(agent_state.pending_tool_calls),
             "total_tool_calls": agent_state.total_tool_calls,
-            "error": agent_state.error,
+            "error": (public_error_message(agent_state.error) if agent_state.error else None),
         }
     else:
         status["agent"] = None

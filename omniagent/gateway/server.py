@@ -9,6 +9,7 @@ from typing import Dict, Optional, TYPE_CHECKING
 from aiohttp import web, WSMsgType
 
 from omniagent.config import OmniAgentConfig
+from omniagent.gateway.errors import public_error_message, public_json_error
 from omniagent.infra import get_logger
 from .router import MessageRouter, IncomingMessage, OutgoingMessage
 from .session import SessionManager
@@ -234,7 +235,7 @@ class GatewayServer:
             await ws.send_json({"error": "Invalid JSON"})
         except Exception as e:
             logger.error("message_handling_error", error=str(e))
-            await ws.send_json({"error": str(e)})
+            await ws.send_json({"error": public_error_message(e)})
 
     async def web_ui_handler(self, request: web.Request) -> web.Response:
         """Serve the web chat UI."""
@@ -322,7 +323,7 @@ class GatewayServer:
 
         except Exception as e:
             logger.error("http_message_error", error=str(e))
-            return web.json_response({"error": str(e)}, status=500)
+            return public_json_error(e, status=500)
 
     def _setup_approval_events(self, agent: "ReflexionAgent") -> None:
         """Subscribe to approval events and push to WebSocket clients."""

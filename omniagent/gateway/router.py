@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from omniagent.infra import get_logger
+from omniagent.gateway.errors import public_error_message
 
 if TYPE_CHECKING:
     from omniagent.channels.bus import MessageBus
@@ -166,7 +167,7 @@ class MessageRouter:
             # Return error message
             return OutgoingMessage(
                 session_id=message.session_id or "unknown",
-                content=f"Error: {str(e)}",
+                content=f"Error: {public_error_message(e)}",
                 metadata={"error": True},
             )
 
