@@ -989,6 +989,22 @@ class OpenRouterLLMProvider(OpenAILLMProvider):
         logger.info("openrouter_llm_initialized", model=model, base_url=self.base_url)
 
 
+class MiniMaxLLMProvider(OpenAILLMProvider):
+    """MiniMax LLM provider using the OpenAI-compatible API."""
+
+    DEFAULT_BASE_URL = "https://api.minimax.io/v1"
+    DEFAULT_MODEL = "MiniMax-M3"
+
+    def __init__(self, api_key: str, model: str = DEFAULT_MODEL, api_url: str = None):
+        base_url = api_url or self.DEFAULT_BASE_URL
+        super().__init__(
+            api_key=api_key,
+            model=model,
+            api_url=base_url,
+        )
+        logger.info("minimax_llm_initialized", model=model, base_url=self.base_url)
+
+
 class LocalInferenceLLMProvider(OpenAILLMProvider):
     """Local inference provider (vLLM/SGLang) with logprobs support for RL.
 
@@ -1130,6 +1146,8 @@ def create_llm_provider(
         return GoogleGeminiLLMProvider(api_key=api_key, model=model or "gemini-2.0-flash", api_url=api_url)
     elif provider == "openrouter":
         return OpenRouterLLMProvider(api_key=api_key, model=model or "openai/gpt-4o", api_url=api_url)
+    elif provider == "minimax":
+        return MiniMaxLLMProvider(api_key=api_key, model=model or "MiniMax-M3", api_url=api_url)
     elif provider in ("vllm", "sglang"):
         default_url = "http://localhost:8000/v1" if provider == "vllm" else "http://localhost:30000/v1"
         return LocalInferenceLLMProvider(

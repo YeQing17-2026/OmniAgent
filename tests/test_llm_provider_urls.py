@@ -4,6 +4,7 @@ import pytest
 
 from omniagent.agents.llm import (
     DeepSeekLLMProvider,
+    MiniMaxLLMProvider,
     OpenRouterLLMProvider,
     create_llm_provider,
     normalize_openai_chat_completions_url,
@@ -67,3 +68,22 @@ def test_openrouter_preserves_custom_api_url():
     )
 
     assert provider.base_url == "https://gateway.example.test/api/v1"
+
+
+def test_minimax_default_uses_official_openai_compatible_base_url():
+    provider = create_llm_provider(provider="minimax", api_key="test-key")
+
+    assert isinstance(provider, MiniMaxLLMProvider)
+    assert provider.base_url == "https://api.minimax.io/v1"
+    assert provider.model == "MiniMax-M3"
+
+
+def test_minimax_accepts_cn_openai_compatible_base_url():
+    provider = create_llm_provider(
+        provider="minimax",
+        api_key="test-key",
+        api_url="https://api.minimaxi.com/v1",
+    )
+
+    assert isinstance(provider, MiniMaxLLMProvider)
+    assert provider.base_url == "https://api.minimaxi.com/v1"
