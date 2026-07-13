@@ -55,6 +55,8 @@ CONTEXT_WINDOW_WARN_BELOW_TOKENS = 32_000
 
 # Model to context window size mapping
 MODEL_CONTEXT_WINDOWS = {
+    "minimax-m3": 1_000_000,
+    "minimax-m2.7": 204_800,
     "deepseek-v3": 8192,
     "deepseek-v3.2": 8192,
     "deepseek-chat": 8192,
