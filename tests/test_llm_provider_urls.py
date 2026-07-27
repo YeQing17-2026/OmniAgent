@@ -3,11 +3,15 @@
 import pytest
 
 from omniagent.agents.llm import (
+    ATLAS_CLOUD_API_URL,
+    ATLAS_CLOUD_DEFAULT_MODEL,
     DeepSeekLLMProvider,
+    OpenAILLMProvider,
     OpenRouterLLMProvider,
     create_llm_provider,
     normalize_openai_chat_completions_url,
 )
+from omniagent.config.models import AgentConfig
 
 
 @pytest.mark.parametrize(
@@ -57,6 +61,33 @@ def test_deepseek_accepts_openai_compatible_base_url():
         provider.chat_completions_url
         == "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions"
     )
+
+
+def test_atlascloud_uses_openai_compatible_defaults():
+    provider = create_llm_provider(provider="atlascloud", api_key="test-key")
+
+    assert isinstance(provider, OpenAILLMProvider)
+    assert provider.base_url == ATLAS_CLOUD_API_URL
+    assert provider.model == ATLAS_CLOUD_DEFAULT_MODEL
+
+
+def test_atlascloud_preserves_custom_model_and_api_url():
+    provider = create_llm_provider(
+        provider="atlascloud",
+        api_key="test-key",
+        model="qwen/qwen3.5-flash",
+        api_url="https://gateway.example.test/v1",
+    )
+
+    assert isinstance(provider, OpenAILLMProvider)
+    assert provider.base_url == "https://gateway.example.test/v1"
+    assert provider.model == "qwen/qwen3.5-flash"
+
+
+def test_agent_config_accepts_atlascloud_provider():
+    config = AgentConfig(model_provider="atlascloud")
+
+    assert config.model_provider == "atlascloud"
 
 
 def test_openrouter_preserves_custom_api_url():

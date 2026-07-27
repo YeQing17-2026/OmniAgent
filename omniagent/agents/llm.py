@@ -11,6 +11,9 @@ from omniagent.infra import get_logger
 
 logger = get_logger(__name__)
 
+ATLAS_CLOUD_API_URL = "https://api.atlascloud.ai/v1"
+ATLAS_CLOUD_DEFAULT_MODEL = "deepseek-ai/deepseek-v4-pro"
+
 
 def normalize_openai_chat_completions_url(api_url: str) -> str:
     """Return the chat completions endpoint for an OpenAI-compatible URL."""
@@ -1122,6 +1125,12 @@ def create_llm_provider(
         )
     elif provider == "openai":
         return OpenAILLMProvider(api_key=api_key, model=model or "gpt-4o", api_url=api_url)
+    elif provider == "atlascloud":
+        return OpenAILLMProvider(
+            api_key=api_key,
+            model=model or ATLAS_CLOUD_DEFAULT_MODEL,
+            api_url=api_url or ATLAS_CLOUD_API_URL,
+        )
     elif provider == "anthropic":
         return AnthropicLLMProvider(api_key=api_key, model=model or "claude-sonnet-4-20250514", api_url=api_url)
     elif provider == "ollama":
