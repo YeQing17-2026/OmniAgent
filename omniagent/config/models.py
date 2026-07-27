@@ -284,7 +284,7 @@ class ContextEvolutionConfig(BaseModel):
         description="Enable context evolution (lesson recording and promotion)",
     )
     lesson_min_evidence: int = Field(
-        default=2,
+        default=3,
         ge=1,
         le=10,
         description="Minimum times a lesson must be confirmed before promotion",
@@ -312,10 +312,52 @@ class ContextEvolutionConfig(BaseModel):
         description="Enable auto-promotion of validated lessons to AGENTS.md",
     )
     user_feedback_min_evidence: int = Field(
-        default=1,
+        default=2,
         ge=1,
         le=10,
-        description="Minimum evidence for user_feedback lessons (lower than auto-learned)",
+        description="Minimum evidence for user_feedback lessons before promotion",
+    )
+    dedup_record_threshold: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Lexical similarity at/above which a new lesson merges into an existing one (so evidence accrues)",
+    )
+    dedup_lexical_threshold: float = Field(
+        default=0.80,
+        ge=0.0,
+        le=1.0,
+        description="Lexical similarity at/above which a candidate duplicates an existing AGENTS.md rule",
+    )
+    dedup_semantic_threshold: float = Field(
+        default=0.78,
+        ge=0.0,
+        le=1.0,
+        description="Cosine similarity at/above which a candidate is a semantic duplicate of an existing rule",
+    )
+    embedding_backend: Literal["auto", "ollama", "fastembed", "off"] = Field(
+        default="auto",
+        description="Local semantic-dedup backend (auto resolves ollama -> fastembed -> off)",
+    )
+    ollama_url: str = Field(
+        default="http://localhost:11434",
+        description="Base URL of a local Ollama server used for embeddings",
+    )
+    ollama_embed_model: str = Field(
+        default="nomic-embed-text",
+        description="Ollama embedding model name",
+    )
+    fastembed_model: str = Field(
+        default="BAAI/bge-small-en-v1.5",
+        description="fastembed model name (used when ollama is unavailable)",
+    )
+    enable_rule_eviction: bool = Field(
+        default=True,
+        description="When learned rules are full, let stronger candidates displace the weakest (archived, not deleted)",
+    )
+    rule_pin_marker: str = Field(
+        default="📌",
+        description="Inline marker that pins a learned rule against eviction",
     )
 
 

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from omniagent.infra import get_logger
+from .similarity import SemanticEmbedder, is_duplicate, lexical_similarity
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,7 @@ class Lesson:
     evidence: int = 1  # How many times confirmed
     promoted: bool = False
     promoted_at: Optional[str] = None
+    last_seen: Optional[str] = None  # Last time evidence was reinforced
 
     def to_jsonl(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)
@@ -63,9 +65,11 @@ class PromotedRule:
 class LessonRecorder:
     """Records lessons from agent execution outcomes to append-only JSONL."""
 
-    def __init__(self, learnings_dir: Path, max_learnings: int = 100):
+    def __init__(self, learnings_dir: Path, max_learnings: int = 100,
+                 dedup_record_threshold: float = 0.85):
         self.learnings_dir = learnings_dir
         self.max_learnings = max_learnings
+        self.dedup_record_threshold = dedup_record_threshold
         self.learnings_dir.mkdir(parents=True, exist_ok=True)
         self._lessons_file = self.learnings_dir / "lessons.jsonl"
         # In-memory index: lesson_hash -> lesson
@@ -110,32 +114,50 @@ class LessonRecorder:
             return None
 
         lesson_text = lesson.strip()
+        now = datetime.now(timezone.utc).isoformat()
         lesson_hash = self._compute_hash(category, lesson_text)
 
-        if lesson_hash in self._index:
-            # Increment evidence for existing lesson
-            existing = self._index[lesson_hash]
+        # Merge into an existing lesson on an exact hash match OR a same-category
+        # near-duplicate, so evidence accumulates across paraphrases (otherwise
+        # the evidence thresholds would be effectively unreachable).
+        existing = self._index.get(lesson_hash)
+        if existing is None:
+            existing = self._find_similar(category, lesson_text)
+        if existing is not None:
             existing.evidence += 1
+            existing.last_seen = now
             self._rewrite_file()
-            logger.debug("lesson_evidence_incremented", hash=lesson_hash, evidence=existing.evidence)
+            logger.debug("lesson_evidence_incremented", hash=existing.lesson_hash, evidence=existing.evidence)
             return existing
-        else:
-            # New lesson
-            new_lesson = Lesson(
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                lesson_hash=lesson_hash,
-                source=source,
-                category=category,
-                lesson=lesson_text,
-                context=context[:500] if context else "",
-                evidence=1,
-            )
-            self._index[lesson_hash] = new_lesson
-            self._prune_if_needed()
-            with open(self._lessons_file, "a", encoding="utf-8") as f:
-                f.write(new_lesson.to_jsonl() + "\n")
-            logger.info("lesson_recorded", hash=lesson_hash, source=source, category=category)
-            return new_lesson
+
+        new_lesson = Lesson(
+            timestamp=now,
+            lesson_hash=lesson_hash,
+            source=source,
+            category=category,
+            lesson=lesson_text,
+            context=context[:500] if context else "",
+            evidence=1,
+            last_seen=now,
+        )
+        self._index[lesson_hash] = new_lesson
+        self._prune_if_needed()
+        with open(self._lessons_file, "a", encoding="utf-8") as f:
+            f.write(new_lesson.to_jsonl() + "\n")
+        logger.info("lesson_recorded", hash=lesson_hash, source=source, category=category)
+        return new_lesson
+
+    def _find_similar(self, category: str, lesson_text: str) -> Optional[Lesson]:
+        """Find an existing same-category lesson that is a near-duplicate."""
+        best: Optional[Lesson] = None
+        best_score = 0.0
+        for l in self._index.values():
+            if l.category != category:
+                continue
+            score = lexical_similarity(lesson_text, l.lesson)
+            if score >= self.dedup_record_threshold and score > best_score:
+                best, best_score = l, score
+        return best
 
     def get_lesson(self, lesson_hash: str) -> Optional[Lesson]:
         """Get a lesson by hash."""
@@ -216,15 +238,34 @@ class LessonAnalyzer:
         min_evidence: int = 2,
         max_agents_rules: int = 30,
         user_feedback_min_evidence: int = 1,
+        lexical_threshold: float = 0.80,
+        semantic_threshold: float = 0.78,
+        embedder: Optional[SemanticEmbedder] = None,
+        enable_eviction: bool = True,
+        pin_marker: str = "📌",
     ):
         self.recorder = recorder
         self.work_dir = work_dir
         self.min_evidence = min_evidence
         self.max_agents_rules = max_agents_rules
         self.user_feedback_min_evidence = user_feedback_min_evidence
+        self.lexical_threshold = lexical_threshold
+        self.semantic_threshold = semantic_threshold
+        self.embedder = embedder
+        self.enable_eviction = enable_eviction
+        self.pin_marker = pin_marker
+        self._promoted_meta_file = (
+            self.work_dir / ".omniagent" / "learnings" / "promoted_rules.jsonl"
+        )
 
-    def check_and_promote(self) -> List[PromotedRule]:
-        """Check for lessons ready for promotion and promote them."""
+    async def check_and_promote(self) -> List[PromotedRule]:
+        """Check for lessons ready for promotion and promote them.
+
+        Dedup against existing AGENTS.md rules is lexical-or-semantic. When the
+        auto-learned section is full, a strictly stronger candidate may displace
+        the weakest evictable rule (archived, not deleted); user-authored or
+        pinned rules are never touched.
+        """
         candidates = self.recorder.get_candidates(
             min_evidence=self.min_evidence,
             user_feedback_min_evidence=self.user_feedback_min_evidence,
@@ -232,36 +273,56 @@ class LessonAnalyzer:
         if not candidates:
             return []
 
-        # Sort by evidence (most confirmed first)
+        # Strongest first: they get scarce slots / get to displace the weakest.
         candidates.sort(key=lambda l: -l.evidence)
 
-        promoted = []
         agents_path = self._find_agents_md()
         if not agents_path:
             logger.debug("no_agents_md_found", work_dir=str(self.work_dir))
             return []
 
-        current_rules = self._read_current_rules(agents_path)
-        remaining_slots = self.max_agents_rules - len(current_rules)
+        current_lines = self._read_current_rules(agents_path)
+        current_texts = [self._rule_text(line) for line in current_lines]
+        meta = self._load_promoted_meta(current_texts)
 
-        for candidate in candidates[:remaining_slots]:
-            if self._is_duplicate(candidate.lesson, current_rules):
-                # Already a similar rule in AGENTS.md
+        promoted: List[PromotedRule] = []
+        for candidate in candidates:
+            if await is_duplicate(
+                candidate.lesson, current_texts,
+                lex_threshold=self.lexical_threshold,
+                sem_threshold=self.semantic_threshold,
+                embedder=self.embedder,
+            ):
                 self.recorder.mark_promoted(candidate.lesson_hash)
                 continue
+
+            # Needs a slot.
+            if len(current_texts) >= self.max_agents_rules:
+                victim = (
+                    self._pick_eviction_victim(current_lines, current_texts, meta, candidate)
+                    if self.enable_eviction else None
+                )
+                if victim is None:
+                    continue  # cannot make room for this candidate
+                self._archive_rule(victim["text"])
+                self._remove_rule_line(agents_path, victim["line"])
+                meta.pop(victim["text"], None)
+                idx = current_lines.index(victim["line"])
+                current_lines.pop(idx)
+                current_texts.pop(idx)
 
             rule = self._format_rule(candidate)
             if not rule:
                 continue
-
+            self._append_one_rule(agents_path, rule, meta)
+            current_lines.append(f"- [{rule.category}] {rule.rule}")
+            current_texts.append(rule.rule)
             promoted.append(rule)
+            self.recorder.mark_promoted(rule._lesson_hash)
 
         if promoted:
-            self._append_rules_to_agents_md(agents_path, promoted)
-            for rule in promoted:
-                # Find the corresponding lesson hash
-                self.recorder.mark_promoted(rule._lesson_hash)
-
+            self._save_promoted_meta(meta)
+            logger.info("rules_promoted_to_agents_md", count=len(promoted))
         return promoted
 
     def _find_agents_md(self) -> Optional[Path]:
@@ -295,19 +356,25 @@ class LessonAnalyzer:
 
         return rules
 
-    def _is_duplicate(self, lesson: str, existing_rules: List[str]) -> bool:
-        """Check if a lesson is already captured by an existing rule."""
-        lesson_lower = lesson.lower()
-        for rule in existing_rules:
-            rule_lower = rule.lower()
-            # Check significant word overlap
-            lesson_words = set(lesson_lower.split())
-            rule_words = set(rule_lower.replace("-", "").split())
-            if len(lesson_words) > 3 and len(rule_words) > 3:
-                overlap = lesson_words & rule_words
-                if len(overlap) / min(len(lesson_words), len(rule_words)) > 0.6:
-                    return True
-        return False
+    def _rule_text(self, line: str) -> str:
+        """Extract the bare rule text from a '- [category] text' bullet line."""
+        s = line.strip()
+        if s.startswith("- "):
+            s = s[2:].strip()
+        s = re.sub(r"^\[[^\]]+\]\s*", "", s)  # drop leading [category]
+        if self.pin_marker and s.startswith(self.pin_marker):
+            s = s[len(self.pin_marker):].strip()
+        return s
+
+    def _is_pinned(self, line: str, text: str, meta: Dict[str, dict]) -> bool:
+        """Protected if pin-marked, flagged pinned, or lacking metadata
+        (a line the user placed by hand)."""
+        if self.pin_marker and self.pin_marker in line:
+            return True
+        entry = meta.get(text)
+        if entry is None:
+            return True
+        return bool(entry.get("pinned"))
 
     def _format_rule(self, lesson: Lesson) -> Optional[PromotedRule]:
         """Format a lesson as a promotable rule."""
@@ -325,33 +392,96 @@ class LessonAnalyzer:
         rule._lesson_hash = lesson.lesson_hash  # Attach for promotion tracking
         return rule
 
-    def _append_rules_to_agents_md(self, agents_path: Path, rules: List[PromotedRule]) -> None:
-        """Append learned rules section to AGENTS.md."""
+    def _append_one_rule(self, agents_path: Path, rule: PromotedRule, meta: Dict[str, dict]) -> None:
+        """Insert one rule into the learned-rules section and record metadata."""
         content = agents_path.read_text(encoding="utf-8")
-
-        # Build rules text
-        rules_lines = []
-        for rule in rules:
-            category_tag = f"[{rule.category}]"
-            rules_lines.append(f"- {category_tag} {rule.rule}")
-
-        rules_text = "\n".join(rules_lines)
-
-        # Check if section already exists
+        line = f"- [{rule.category}] {rule.rule}"
         if self.LEARNED_RULES_SECTION in content:
-            # Append to existing section
             content = re.sub(
                 rf"({re.escape(self.LEARNED_RULES_SECTION)}\n)",
-                rf"\1{rules_text}\n",
+                rf"\1{line}\n",
                 content,
             )
         else:
-            # Create new section at the end
-            section = f"\n{self.LEARNED_RULES_SECTION}\n{rules_text}\n"
-            content = content.rstrip() + section
-
+            content = content.rstrip() + f"\n{self.LEARNED_RULES_SECTION}\n{line}\n"
         agents_path.write_text(content, encoding="utf-8")
-        logger.info("rules_promoted_to_agents_md", count=len(rules))
+
+        lesson = self.recorder.get_lesson(rule._lesson_hash)
+        meta[rule.rule] = {
+            "rule_text": rule.rule,
+            "category": rule.category,
+            "source": rule.source,
+            "lesson_hash": rule._lesson_hash,
+            "evidence": lesson.evidence if lesson else 1,
+            "promoted_at": rule.promoted_at,
+            "last_seen": (lesson.last_seen if lesson and lesson.last_seen else rule.promoted_at),
+            "pinned": False,
+        }
+
+    def _load_promoted_meta(self, current_texts: List[str]) -> Dict[str, dict]:
+        """Load promoted-rule metadata, dropping entries no longer in AGENTS.md."""
+        meta: Dict[str, dict] = {}
+        if self._promoted_meta_file.exists():
+            for line in self._promoted_meta_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    meta[entry["rule_text"]] = entry
+                except (json.JSONDecodeError, KeyError):
+                    continue
+        present = set(current_texts)
+        return {k: v for k, v in meta.items() if k in present}
+
+    def _save_promoted_meta(self, meta: Dict[str, dict]) -> None:
+        self._promoted_meta_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._promoted_meta_file, "w", encoding="utf-8") as f:
+            for entry in meta.values():
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def _archive_rule(self, text: str) -> None:
+        """Append an evicted rule to the archive (kept, not deleted)."""
+        archive_path = self.work_dir / self.ARCHIVE_FILE
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat()
+        with open(archive_path, "a", encoding="utf-8") as f:
+            f.write(f"- [{ts}] {text}\n")
+
+    def _remove_rule_line(self, agents_path: Path, line: str) -> None:
+        content = agents_path.read_text(encoding="utf-8")
+        kept = [ln for ln in content.split("\n") if ln.strip() != line.strip()]
+        agents_path.write_text("\n".join(kept), encoding="utf-8")
+
+    def _pick_eviction_victim(
+        self, lines: List[str], texts: List[str], meta: Dict[str, dict], candidate: Lesson
+    ) -> Optional[dict]:
+        """Weakest evictable rule the candidate may displace, else None.
+
+        Evictable = system-promoted (has metadata) and not pinned/protected.
+        Ranked by (evidence asc, last_seen asc) so an old-but-reinforced rule
+        survives. Returns a victim only if the candidate strictly out-evidences it.
+        """
+        evictable = []
+        for line, text in zip(lines, texts):
+            if self._is_pinned(line, text, meta):
+                continue
+            entry = meta.get(text)
+            if entry is None:
+                continue
+            evictable.append((
+                entry.get("evidence", 1),
+                entry.get("last_seen") or entry.get("promoted_at") or "",
+                line,
+                text,
+            ))
+        if not evictable:
+            return None
+        evictable.sort(key=lambda x: (x[0], x[1]))
+        weakest_evidence, _, line, text = evictable[0]
+        if candidate.evidence > weakest_evidence:
+            return {"line": line, "text": text, "evidence": weakest_evidence}
+        return None
 
 
 # ── Lesson Extractor ───────────────────────────────────────────────
@@ -543,10 +673,17 @@ class ContextEvolutionManager:
         self.recorder = LessonRecorder(
             learnings_dir=self._learnings_dir,
             max_learnings=config.max_learnings,
+            dedup_record_threshold=getattr(config, "dedup_record_threshold", 0.85),
         )
         self.extractor = LessonExtractor(
             llm_provider=llm_provider,
             max_tokens=config.compile_max_tokens,
+        )
+        embedder = SemanticEmbedder(
+            backend=getattr(config, "embedding_backend", "auto"),
+            ollama_url=getattr(config, "ollama_url", "http://localhost:11434"),
+            ollama_model=getattr(config, "ollama_embed_model", "nomic-embed-text"),
+            fastembed_model=getattr(config, "fastembed_model", "BAAI/bge-small-en-v1.5"),
         )
         self.analyzer = LessonAnalyzer(
             recorder=self.recorder,
@@ -554,6 +691,11 @@ class ContextEvolutionManager:
             min_evidence=config.lesson_min_evidence,
             max_agents_rules=config.max_agents_rules,
             user_feedback_min_evidence=config.user_feedback_min_evidence,
+            lexical_threshold=getattr(config, "dedup_lexical_threshold", 0.72),
+            semantic_threshold=getattr(config, "dedup_semantic_threshold", 0.82),
+            embedder=embedder,
+            enable_eviction=getattr(config, "enable_rule_eviction", True),
+            pin_marker=getattr(config, "rule_pin_marker", "📌"),
         )
 
         self._current_task: str = ""
@@ -674,7 +816,7 @@ class ContextEvolutionManager:
         rule_details: List[str] = []
         if self.config.promotion_enabled:
             try:
-                promoted = self.analyzer.check_and_promote()
+                promoted = await self.analyzer.check_and_promote()
                 if promoted:
                     rules_promoted = len(promoted)
                     rule_details = [r.rule for r in promoted if r.rule]
