@@ -53,9 +53,9 @@ class AgentConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    model_provider: Literal["deepseek", "openai", "anthropic", "ollama", "gemini", "openrouter", "vllm", "sglang", "custom"] = Field(
+    model_provider: Literal["deepseek", "openai", "anthropic", "ollama", "gemini", "openrouter", "vllm", "sglang", "custom", "openai-codex"] = Field(
         default="deepseek",
-        description="LLM provider (deepseek, openai, anthropic, ollama, gemini, openrouter, vllm, sglang, custom)"
+        description="LLM provider (deepseek, openai, anthropic, ollama, gemini, openrouter, vllm, sglang, custom, openai-codex)"
     )
     model_id: str = Field(
         default="deepseek-chat",
