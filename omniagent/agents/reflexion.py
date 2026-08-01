@@ -1110,11 +1110,17 @@ class ReflexionAgent(Agent):
                 logger.warning("native_fc_unknown_tool", tool=name)
                 continue
 
-            try:
-                params = json.loads(fn.get("arguments", "{}"))
-            except json.JSONDecodeError:
-                logger.warning("native_fc_invalid_args", tool=name, arguments=fn.get("arguments"))
-                params = {}
+            raw_args = fn.get("arguments", "{}")
+            if isinstance(raw_args, dict):
+                # Some OpenAI-compatible providers (e.g. DeepSeek) return
+                # arguments already parsed instead of a JSON string.
+                params = raw_args
+            else:
+                try:
+                    params = json.loads(raw_args)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("native_fc_invalid_args", tool=name, arguments=raw_args)
+                    params = {}
 
             actions.append({
                 "tool": name,
