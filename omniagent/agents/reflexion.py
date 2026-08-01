@@ -1944,22 +1944,6 @@ Do NOT write code or tool calls. Only provide the reflection."""
 
         logger.info("executing_tool", tool=tool_name, params=params)
 
-        # Capture memory search results for L0 hints injection
-        if tool_name == "memory_search" and self.memory_manager:
-            try:
-                raw_results = self.memory_manager.search(
-                    query=params.get("query", ""),
-                    max_results=params.get("max_results", 6),
-                )
-                if raw_results:
-                    self._context_hints = [
-                        {"path": r.path, "snippet": r.snippet, "score": r.score}
-                        for r in raw_results
-                    ]
-                    logger.debug("context_hints_captured", count=len(self._context_hints))
-            except Exception as e:
-                logger.warning("context_hints_capture_failed", error=str(e))
-
         # Check if tool exists
         if tool_name not in self.tools:
             return f"Error: Tool '{tool_name}' not found. Available tools: {list(self.tools.keys())}"
@@ -2071,6 +2055,17 @@ Do NOT write code or tool calls. Only provide the reflection."""
             # Execute tool
             tool = self.tools[tool_name]
             result = await tool.execute(params)
+
+            # Capture memory search results for L0 hints injection. The tool
+            # exposes structured results in metadata so we don't re-run the
+            # search here (a single memory_search call should retrieve once).
+            if result.success and result.metadata.get("context_hints"):
+                self._context_hints = result.metadata["context_hints"]
+                logger.debug(
+                    "context_hints_captured",
+                    count=len(self._context_hints),
+                    tool=tool_name,
+                )
 
             # Log successful execution
             if self.enable_security:
