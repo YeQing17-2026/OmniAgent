@@ -497,7 +497,17 @@ class MemorySearchTool(Tool):
                 parts.append(f"{r.snippet}\n\n{citation}")
 
             output = "\n\n---\n\n".join(parts)
-            return ToolResult(success=True, output=output)
+
+            # Expose structured results so callers can build L0 context hints
+            # without re-running the search (avoids duplicate retrieval).
+            context_hints = [
+                {"path": r.path, "snippet": r.snippet, "score": r.score} for r in results
+            ]
+            return ToolResult(
+                success=True,
+                output=output,
+                metadata={"context_hints": context_hints},
+            )
         except Exception as e:
             return ToolResult(success=False, output="", error=str(e))
 
