@@ -5,6 +5,7 @@ import pytest
 from omniagent.agents.llm import (
     DeepSeekLLMProvider,
     OpenRouterLLMProvider,
+    OrcaRouterLLMProvider,
     create_llm_provider,
     normalize_openai_chat_completions_url,
 )
@@ -61,6 +62,24 @@ def test_deepseek_accepts_openai_compatible_base_url():
 
 def test_openrouter_preserves_custom_api_url():
     provider = OpenRouterLLMProvider(
+        api_key="test-key",
+        model="openai/gpt-4o",
+        api_url="https://gateway.example.test/api/v1",
+    )
+
+    assert provider.base_url == "https://gateway.example.test/api/v1"
+
+
+def test_orcarouter_default_uses_official_base_url():
+    provider = create_llm_provider(provider="orcarouter", api_key="test-key")
+
+    assert isinstance(provider, OrcaRouterLLMProvider)
+    assert provider.base_url == "https://api.orcarouter.ai/v1"
+    assert provider.model == "openai/gpt-4o"
+
+
+def test_orcarouter_preserves_custom_api_url():
+    provider = OrcaRouterLLMProvider(
         api_key="test-key",
         model="openai/gpt-4o",
         api_url="https://gateway.example.test/api/v1",

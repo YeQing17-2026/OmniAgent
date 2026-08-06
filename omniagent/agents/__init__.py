@@ -5,7 +5,7 @@ from .reflexion import ReflexionAgent
 from .llm import (
     LLMProvider, LLMMessage, LLMResponse,
     DeepSeekLLMProvider, OpenAILLMProvider, AnthropicLLMProvider,
-    OllamaLLMProvider, GoogleGeminiLLMProvider, OpenRouterLLMProvider,
+    OllamaLLMProvider, GoogleGeminiLLMProvider, OpenRouterLLMProvider, OrcaRouterLLMProvider,
     LocalInferenceLLMProvider,
     create_llm_provider,
 )
@@ -34,6 +34,7 @@ __all__ = [
     "OllamaLLMProvider",
     "GoogleGeminiLLMProvider",
     "OpenRouterLLMProvider",
+    "OrcaRouterLLMProvider",
     "LocalInferenceLLMProvider",
     "create_llm_provider",
     "ContextManager",

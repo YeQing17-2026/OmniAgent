@@ -989,6 +989,25 @@ class OpenRouterLLMProvider(OpenAILLMProvider):
         logger.info("openrouter_llm_initialized", model=model, base_url=self.base_url)
 
 
+class OrcaRouterLLMProvider(OpenAILLMProvider):
+    """OrcaRouter LLM provider (aggregated model access).
+
+    OrcaRouter (https://www.orcarouter.ai) routes any model through one key with
+    an OpenAI-compatible endpoint at https://api.orcarouter.ai/v1.
+    """
+
+    DEFAULT_BASE_URL = "https://api.orcarouter.ai/v1"
+
+    def __init__(self, api_key: str, model: str = "openai/gpt-4o", api_url: str = None):
+        base_url = api_url or self.DEFAULT_BASE_URL
+        super().__init__(
+            api_key=api_key,
+            model=model,
+            api_url=base_url,
+        )
+        logger.info("orcarouter_llm_initialized", model=model, base_url=self.base_url)
+
+
 class LocalInferenceLLMProvider(OpenAILLMProvider):
     """Local inference provider (vLLM/SGLang) with logprobs support for RL.
 
@@ -1130,6 +1149,8 @@ def create_llm_provider(
         return GoogleGeminiLLMProvider(api_key=api_key, model=model or "gemini-2.0-flash", api_url=api_url)
     elif provider == "openrouter":
         return OpenRouterLLMProvider(api_key=api_key, model=model or "openai/gpt-4o", api_url=api_url)
+    elif provider == "orcarouter":
+        return OrcaRouterLLMProvider(api_key=api_key, model=model or "openai/gpt-4o", api_url=api_url)
     elif provider in ("vllm", "sglang"):
         default_url = "http://localhost:8000/v1" if provider == "vllm" else "http://localhost:30000/v1"
         return LocalInferenceLLMProvider(
