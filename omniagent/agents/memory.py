@@ -1,20 +1,80 @@
 """Memory storage layer for OmniAgent.
 
 Memory system for OmniAgent:
-- SQLite storage with FTS5 full-text search (memory-schema.ts)
-- Markdown chunking
-- File discovery from MEMORY.md + memory/*.md (listMemoryFiles)
+- SQLite storage with FTS5 full-text search
+- sqlite-vec BLOB vector storage (Issue #11)
+- KNN native query support (Issue #12)
+- Embedding cache with incremental computation (Issue #13)
+- ShortTermRecallStore for promotion tracking (Issue #14)
+- Session isolation (Issue #24)
+- File discovery from MEMORY.md + memory/*.md
 - Hash-based change detection for incremental sync
 """
 
 import hashlib
+import struct
 import time
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from omniagent.infra import get_logger
 
 logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# sqlite-vec availability check (#11)
+# ---------------------------------------------------------------------------
+
+_sqlite_vec_available: Optional[bool] = None
+
+
+def check_sqlite_vec() -> bool:
+    """Check if sqlite-vec extension is available."""
+    global _sqlite_vec_available
+    if _sqlite_vec_available is not None:
+        return _sqlite_vec_available
+    try:
+        import sqlite_vec  # noqa: F401
+        _sqlite_vec_available = True
+    except ImportError:
+        _sqlite_vec_available = False
+        logger.warning(
+            "sqlite_vec_unavailable",
+            hint="Install with: pip install sqlite-vec",
+        )
+    return _sqlite_vec_available
+
+
+def load_sqlite_vec(conn) -> bool:
+    """Load sqlite-vec extension into a connection. Returns True on success."""
+    if not check_sqlite_vec():
+        return False
+    try:
+        import sqlite_vec
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        return True
+    except Exception as e:
+        logger.warning("sqlite_vec_load_failed", error=str(e))
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Embedding BLOB helpers (#11)
+# ---------------------------------------------------------------------------
+
+def embedding_to_blob(embedding: List[float]) -> bytes:
+    """Convert float32 embedding list to BLOB bytes."""
+    return struct.pack(f"{len(embedding)}f", *embedding)
+
+
+def blob_to_embedding(blob: bytes) -> List[float]:
+    """Convert BLOB bytes back to float32 list."""
+    n = len(blob) // 4
+    return list(struct.unpack(f"{n}f", blob))
 
 
 # Markdown chunking defaults
@@ -241,12 +301,78 @@ CREATE TABLE IF NOT EXISTS chunks (
     model TEXT NOT NULL,
     text TEXT NOT NULL,
     updated_at INTEGER NOT NULL,
+    session_id TEXT,
     embedding TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
 CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);
+CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id);
+
+-- chunks_vec: sqlite-vec BLOB vector table (#11)
+CREATE TABLE IF NOT EXISTS chunks_vec (
+    id TEXT PRIMARY KEY,
+    embedding BLOB NOT NULL
+);
+
+-- embedding_cache: content-hash based dedup (#13)
+CREATE TABLE IF NOT EXISTS embedding_cache (
+    content_hash TEXT PRIMARY KEY,
+    embedding BLOB NOT NULL,
+    model TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- short_term_recall: tracks memory search hits for promotion (#14)
+CREATE TABLE IF NOT EXISTS short_term_recall (
+    key TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'memory',
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    snippet TEXT NOT NULL,
+    recall_count INTEGER DEFAULT 0,
+    total_score REAL DEFAULT 0.0,
+    max_score REAL DEFAULT 0.0,
+    unique_query_count INTEGER DEFAULT 0,
+    first_recalled_at TEXT,
+    last_recalled_at TEXT,
+    query_hashes TEXT,
+    recall_days TEXT,
+    concept_tags TEXT,
+    claim_hash TEXT,
+    promoted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_recall_path ON short_term_recall(path);
+CREATE INDEX IF NOT EXISTS idx_recall_count ON short_term_recall(recall_count DESC);
 """
+
+# ---------------------------------------------------------------------------
+# ShortTermRecallEntry dataclass (#14)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ShortTermRecallEntry:
+    """Tracks a memory chunk's recall history for promotion scoring."""
+
+    key: str
+    path: str
+    source: str
+    start_line: int
+    end_line: int
+    snippet: str
+    recall_count: int = 0
+    total_score: float = 0.0
+    max_score: float = 0.0
+    unique_query_count: int = 0
+    first_recalled_at: Optional[str] = None
+    last_recalled_at: Optional[str] = None
+    query_hashes: List[str] = field(default_factory=list)
+    recall_days: List[str] = field(default_factory=list)
+    concept_tags: List[str] = field(default_factory=list)
+    claim_hash: Optional[str] = None
+    promoted_at: Optional[str] = None
 
 
 class MemoryStore:
@@ -262,13 +388,14 @@ class MemoryStore:
         logger.info("memory_store_initialized", db_path=str(db_path))
 
     def _init_db(self) -> None:
-        """Initialize database schema."""
+        """Initialize database schema with migrations."""
         import sqlite3
 
         conn = sqlite3.connect(str(self.db_path))
         try:
             conn.executescript(_SCHEMA_SQL)
-            # Create FTS5 table
+
+            # FTS5 virtual table
             try:
                 conn.execute("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
@@ -282,16 +409,58 @@ class MemoryStore:
             except sqlite3.OperationalError as e:
                 logger.warning("fts5_creation_failed", error=str(e))
 
-            # Migration: add embedding column if missing (existing DBs)
+            # Migration: add embedding column if missing
             try:
                 conn.execute("SELECT embedding FROM chunks LIMIT 0")
             except sqlite3.OperationalError:
-                logger.info("memory_db_migration_adding_embedding_column")
+                logger.info("migration_adding_embedding_column")
                 conn.execute("ALTER TABLE chunks ADD COLUMN embedding TEXT")
+
+            # Migration: add session_id column if missing
+            try:
+                conn.execute("SELECT session_id FROM chunks LIMIT 0")
+            except sqlite3.OperationalError:
+                logger.info("migration_adding_session_id_column")
+                conn.execute("ALTER TABLE chunks ADD COLUMN session_id TEXT")
+
+            # Migrate TEXT embeddings to BLOB chunks_vec (#11)
+            self._migrate_embeddings_to_blob(conn)
 
             conn.commit()
         finally:
             conn.close()
+
+    def _migrate_embeddings_to_blob(self, conn) -> None:
+        """Migrate TEXT-encoded embeddings from chunks to chunks_vec BLOB table."""
+        import json as _json
+        try:
+            rows = conn.execute(
+                "SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL"
+            ).fetchall()
+            migrated = 0
+            for row in rows:
+                chunk_id = row[0]
+                emb_str = row[1]
+                # Skip if already migrated
+                existing = conn.execute(
+                    "SELECT id FROM chunks_vec WHERE id = ?", (chunk_id,)
+                ).fetchone()
+                if existing:
+                    continue
+                try:
+                    vec = _json.loads(emb_str) if isinstance(emb_str, str) else emb_str
+                    blob = embedding_to_blob(vec)
+                    conn.execute(
+                        "INSERT OR REPLACE INTO chunks_vec (id, embedding) VALUES (?, ?)",
+                        (chunk_id, blob),
+                    )
+                    migrated += 1
+                except Exception:
+                    pass
+            if migrated > 0:
+                logger.info("embedding_migration_complete", migrated=migrated)
+        except Exception as e:
+            logger.warning("embedding_migration_failed", error=str(e))
 
     def _get_conn(self):
         import sqlite3
@@ -371,6 +540,7 @@ class MemoryStore:
         chunk_hash: str,
         model: str,
         text: str,
+        session_id: Optional[str] = None,
     ) -> None:
         """Insert or update a chunk."""
         conn = self._get_conn()
@@ -378,11 +548,10 @@ class MemoryStore:
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO chunks
-                   (id, path, source, start_line, end_line, hash, model, text, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (chunk_id, path, source, start_line, end_line, chunk_hash, model, text, now),
+                   (id, path, source, start_line, end_line, hash, model, text, updated_at, session_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (chunk_id, path, source, start_line, end_line, chunk_hash, model, text, now, session_id),
             )
-            # Also insert into FTS5
             try:
                 conn.execute(
                     """INSERT OR REPLACE INTO chunks_fts (text, id, path, source, model)
@@ -440,26 +609,309 @@ class MemoryStore:
         finally:
             conn.close()
 
-    def get_all_chunks_for_vector(self) -> List[dict]:
-        """Get all chunks with embedding for vector search."""
+    def get_all_chunks_for_vector(self, session_id: Optional[str] = None) -> List[dict]:
+        """Get all chunks that have BLOB embeddings in chunks_vec (#11).
+
+        Falls back to TEXT-encoded embeddings in chunks if chunks_vec is empty.
+        """
         conn = self._get_conn()
         try:
+            # Prefer chunks_vec BLOB
             rows = conn.execute(
-                """SELECT id, path, start_line, end_line, text, source, model, embedding
+                """SELECT ch.id, ch.path, ch.start_line, ch.end_line,
+                          ch.text, ch.source, ch.model, cv.embedding AS embedding_blob
+                   FROM chunks_vec cv
+                   JOIN chunks ch ON cv.id = ch.id"""
+            ).fetchall()
+            if rows:
+                result = []
+                for row in rows:
+                    d = dict(row)
+                    blob = d.pop("embedding_blob", None)
+                    d["embedding"] = blob_to_embedding(blob) if blob else None
+                    if session_id is None or d.get("session_id") == session_id:
+                        result.append(d)
+                return result
+
+            # Fallback: TEXT embeddings
+            import json as _json
+            rows = conn.execute(
+                """SELECT id, path, start_line, end_line, text, source, model, embedding, session_id
                    FROM chunks
                    WHERE embedding IS NOT NULL"""
             ).fetchall()
-            return [dict(row) for row in rows]
+            result = []
+            for row in rows:
+                d = dict(row)
+                if session_id is not None and d.get("session_id") != session_id:
+                    continue
+                emb = d.get("embedding")
+                if isinstance(emb, str):
+                    try:
+                        d["embedding"] = _json.loads(emb)
+                    except Exception:
+                        d["embedding"] = None
+                result.append(d)
+            return result
         finally:
             conn.close()
 
-    def save_embedding(self, chunk_id: str, embedding: str) -> None:
-        """Save embedding vector for a chunk."""
+    def save_embedding(self, chunk_id: str, embedding: List[float]) -> None:
+        """Save embedding as BLOB in chunks_vec (#11) and legacy TEXT in chunks."""
+        blob = embedding_to_blob(embedding)
+        conn = self._get_conn()
+        try:
+            # Primary: BLOB storage
+            conn.execute(
+                "INSERT OR REPLACE INTO chunks_vec (id, embedding) VALUES (?, ?)",
+                (chunk_id, blob),
+            )
+            # Keep TEXT column for backward compat (cheap)
+            import json as _json
+            conn.execute(
+                "UPDATE chunks SET embedding = ? WHERE id = ?",
+                (_json.dumps(embedding), chunk_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_embedding_blob(self, chunk_id: str) -> Optional[bytes]:
+        """Get raw BLOB embedding for a chunk (#11)."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT embedding FROM chunks_vec WHERE id = ?", (chunk_id,)
+            ).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Embedding cache (#13)
+    # ------------------------------------------------------------------
+
+    def get_cached_embedding(self, content_hash: str) -> Optional[List[float]]:
+        """Get cached embedding by content hash."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT embedding FROM embedding_cache WHERE content_hash = ?",
+                (content_hash,),
+            ).fetchone()
+            if row and row[0]:
+                return blob_to_embedding(row[0])
+            return None
+        finally:
+            conn.close()
+
+    def set_cached_embedding(
+        self, content_hash: str, embedding: List[float], model: str
+    ) -> None:
+        """Cache embedding by content hash (#13)."""
+        blob = embedding_to_blob(embedding)
+        now = int(time.time())
         conn = self._get_conn()
         try:
             conn.execute(
-                "UPDATE chunks SET embedding = ? WHERE id = ?",
-                (embedding, chunk_id),
+                """INSERT OR REPLACE INTO embedding_cache
+                   (content_hash, embedding, model, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (content_hash, blob, model, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def content_hash(self, text: str) -> str:
+        """Compute content hash for embedding cache key."""
+        return hashlib.sha256(text.encode()).hexdigest()[:32]
+
+    # ------------------------------------------------------------------
+    # KNN search (#12) — native sqlite-vec vec_distance_l2/cosine
+    # ------------------------------------------------------------------
+
+    def search_knn(
+        self,
+        query_embedding: List[float],
+        limit: int = 10,
+        session_id: Optional[str] = None,
+    ) -> List[dict]:
+        """KNN search using sqlite-vec if available, else fallback to cosine scan (#12)."""
+        import sqlite3
+
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        vec_loaded = load_sqlite_vec(conn)
+
+        try:
+            if vec_loaded:
+                # Native KNN via sqlite-vec
+                query_blob = embedding_to_blob(query_embedding)
+                sql = """
+                    SELECT cv.id, ch.path, ch.start_line, ch.end_line,
+                           ch.text, ch.source, ch.model,
+                           vec_distance_cosine(cv.embedding, ?) AS distance
+                    FROM chunks_vec cv
+                    JOIN chunks ch ON cv.id = ch.id
+                    ORDER BY distance
+                    LIMIT ?
+                """
+                rows = conn.execute(sql, (query_blob, limit)).fetchall()
+                results = []
+                for row in rows:
+                    d = dict(row)
+                    if session_id is not None and d.get("session_id") != session_id:
+                        continue
+                    distance = d.pop("distance", 1.0)
+                    d["score"] = max(0.0, 1.0 - distance)
+                    results.append(d)
+                return results
+            else:
+                # Pure Python cosine scan fallback
+                return self._cosine_scan(query_embedding, limit, session_id)
+        finally:
+            conn.close()
+
+    def _cosine_scan(
+        self,
+        query_embedding: List[float],
+        limit: int,
+        session_id: Optional[str],
+    ) -> List[dict]:
+        """O(n) cosine similarity scan fallback when sqlite-vec is unavailable."""
+        import math
+
+        all_chunks = self.get_all_chunks_for_vector(session_id=session_id)
+        if not all_chunks or not query_embedding:
+            return []
+
+        q_norm = math.sqrt(sum(x * x for x in query_embedding)) or 1.0
+        scored = []
+        for chunk in all_chunks:
+            vec = chunk.get("embedding")
+            if not vec:
+                continue
+            dot = sum(a * b for a, b in zip(query_embedding, vec))
+            v_norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+            sim = dot / (q_norm * v_norm)
+            scored.append({**chunk, "score": sim})
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:limit]
+
+    # ------------------------------------------------------------------
+    # Short-term recall tracking (#14)
+    # ------------------------------------------------------------------
+
+    def upsert_recall(self, entry: "ShortTermRecallEntry") -> None:
+        """Insert or update a short-term recall entry."""
+        import json as _json
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO short_term_recall
+                   (key, path, source, start_line, end_line, snippet,
+                    recall_count, total_score, max_score, unique_query_count,
+                    first_recalled_at, last_recalled_at,
+                    query_hashes, recall_days, concept_tags, claim_hash, promoted_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    entry.key, entry.path, entry.source,
+                    entry.start_line, entry.end_line, entry.snippet,
+                    entry.recall_count, entry.total_score, entry.max_score,
+                    entry.unique_query_count,
+                    entry.first_recalled_at, entry.last_recalled_at,
+                    _json.dumps(entry.query_hashes),
+                    _json.dumps(entry.recall_days),
+                    _json.dumps(entry.concept_tags),
+                    entry.claim_hash, entry.promoted_at,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_recall(self, key: str) -> Optional["ShortTermRecallEntry"]:
+        """Get a recall entry by key."""
+        import json as _json
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM short_term_recall WHERE key = ?", (key,)
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            return ShortTermRecallEntry(
+                key=d["key"],
+                path=d["path"],
+                source=d.get("source", "memory"),
+                start_line=d["start_line"],
+                end_line=d["end_line"],
+                snippet=d["snippet"],
+                recall_count=d.get("recall_count", 0),
+                total_score=d.get("total_score", 0.0),
+                max_score=d.get("max_score", 0.0),
+                unique_query_count=d.get("unique_query_count", 0),
+                first_recalled_at=d.get("first_recalled_at"),
+                last_recalled_at=d.get("last_recalled_at"),
+                query_hashes=_json.loads(d.get("query_hashes") or "[]"),
+                recall_days=_json.loads(d.get("recall_days") or "[]"),
+                concept_tags=_json.loads(d.get("concept_tags") or "[]"),
+                claim_hash=d.get("claim_hash"),
+                promoted_at=d.get("promoted_at"),
+            )
+        finally:
+            conn.close()
+
+    def get_top_recall_candidates(
+        self, min_count: int = 3, limit: int = 50
+    ) -> List["ShortTermRecallEntry"]:
+        """Get top recall candidates ordered by recall_count (#16/#17)."""
+        import json as _json
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT * FROM short_term_recall
+                   WHERE recall_count >= ? AND promoted_at IS NULL
+                   ORDER BY recall_count DESC
+                   LIMIT ?""",
+                (min_count, limit),
+            ).fetchall()
+            entries = []
+            for d in (dict(r) for r in rows):
+                entries.append(ShortTermRecallEntry(
+                    key=d["key"],
+                    path=d["path"],
+                    source=d.get("source", "memory"),
+                    start_line=d["start_line"],
+                    end_line=d["end_line"],
+                    snippet=d["snippet"],
+                    recall_count=d.get("recall_count", 0),
+                    total_score=d.get("total_score", 0.0),
+                    max_score=d.get("max_score", 0.0),
+                    unique_query_count=d.get("unique_query_count", 0),
+                    first_recalled_at=d.get("first_recalled_at"),
+                    last_recalled_at=d.get("last_recalled_at"),
+                    query_hashes=_json.loads(d.get("query_hashes") or "[]"),
+                    recall_days=_json.loads(d.get("recall_days") or "[]"),
+                    concept_tags=_json.loads(d.get("concept_tags") or "[]"),
+                    claim_hash=d.get("claim_hash"),
+                    promoted_at=d.get("promoted_at"),
+                ))
+            return entries
+        finally:
+            conn.close()
+
+    def mark_promoted(self, key: str) -> None:
+        """Mark a recall entry as promoted to long-term memory."""
+        now = datetime.now().isoformat(timespec="seconds")
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                "UPDATE short_term_recall SET promoted_at = ? WHERE key = ?",
+                (now, key),
             )
             conn.commit()
         finally:

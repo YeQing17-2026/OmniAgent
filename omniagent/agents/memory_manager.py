@@ -2,24 +2,23 @@
 
 Memory search system for OmniAgent:
 - MemorySearchManager: hybrid search (BM25 + vector), embedding
-- memory_search and memory_get agent tools
+- memory_search, memory_get, memory_store agent tools
 - FTS-only fallback when no embedding provider available
+- MMR reranking (#24), session isolation (#24)
+- DailyNotesLoader (#25)
 """
 
-import asyncio
-import json
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from omniagent.agents.llm import LLMMessage, LLMProvider
+from omniagent.agents.llm import LLMProvider
 from omniagent.infra import get_logger
 from omniagent.tools.base import Tool, ToolResult
 
 from .memory import (
     MemoryStore,
-    MemoryChunk,
     chunk_markdown,
     generate_chunk_id,
     file_hash,
@@ -159,12 +158,12 @@ class MemorySearchManager:
                     text=chunk.text,
                 )
 
-                # Compute embedding if available
+                # Compute embedding if available (with cache, #13)
                 if self._vector_available:
                     try:
-                        embedding = await self._embed_text(chunk.text)
+                        embedding = await self._embed_text_cached(chunk.text)
                         if embedding:
-                            self.store.save_embedding(chunk_id, json.dumps(embedding))
+                            self.store.save_embedding(chunk_id, embedding)
                     except Exception as e:
                         logger.warning("embedding_failed", chunk_id=chunk_id[:12], error=str(e))
 
@@ -222,160 +221,109 @@ class MemorySearchManager:
 
         return None
 
-    def search(self, query: str, max_results: int = None, min_score: float = None) -> List[MemorySearchResult]:
-        """Search memory using hybrid (BM25 + vector) or FTS-only mode.
+    async def _embed_text_cached(self, text: str) -> Optional[List[float]]:
+        """Generate embedding with content-hash cache (#13)."""
+        content_hash = self.store.content_hash(text)
+        cached = self.store.get_cached_embedding(content_hash)
+        if cached is not None:
+            return cached
 
-       ts mergeHybridResults() + manager-search.ts search().
-        """
-        max_results = max_results or self.query_max_results
-        min_score = min_score or self.query_min_score
+        embedding = await self._embed_text(text)
+        if embedding:
+            self.store.set_cached_embedding(content_hash, embedding, self.model_id or "default")
+        return embedding
 
-        # Always do keyword search
-        keyword_results = self.store.search_fts(query, limit=max_results * 4)
+    async def search(
+        self,
+        query: str,
+        max_results: Optional[int] = None,
+        min_score: Optional[float] = None,
+        session_id: Optional[str] = None,
+        mmr_lambda: float = 0.7,
+    ) -> List[MemorySearchResult]:
+        """Hybrid search (BM25 + KNN) with optional MMR reranking (#24)."""
+        n = max_results if max_results is not None else self.query_max_results
+        threshold = min_score if min_score is not None else self.query_min_score
+
+        keyword_results = self.store.search_fts(query, limit=n * 4)
 
         if not self._vector_available or not self.hybrid_enabled:
-            # FTS-only mode
-            return [
+            results = [
                 self._row_to_result(row, snippet_length=300)
                 for row in keyword_results
-                if row["score"] >= min_score
-            ][:max_results]
+                if row["score"] >= threshold
+            ][:n]
+            return self._mmr_rerank_results(results, lambda_param=mmr_lambda)
 
-        # Hybrid mode: combine BM25 + vector scores
-        vector_results = self._search_vector(query, limit=max_results * 4)
+        # Generate query embedding for KNN
+        query_embedding = await self._embed_text_cached(query) or []
 
-        # Merge by chunk ID
-        merged = {}
+        vector_rows = self.store.search_knn(
+            query_embedding=query_embedding,
+            limit=n * 4,
+            session_id=session_id,
+        )
+        # Merge keyword + vector results
+        merged: Dict[str, Dict] = {}
         for row in keyword_results:
             cid = row["id"]
-            if cid not in merged:
-                merged[cid] = {"text_score": 0.0, "vector_score": 0.0, "data": row}
+            merged.setdefault(cid, {"text_score": 0.0, "vector_score": 0.0, "data": row})
             merged[cid]["text_score"] = row["score"]
-
-        for row in vector_results:
-            cid = row["id"]
-            if cid not in merged:
-                merged[cid] = {"text_score": 0.0, "vector_score": 0.0, "data": row}
+        for row in vector_rows:
+            cid = row.get("id", row.get("chunk_id", ""))
+            merged.setdefault(cid, {"text_score": 0.0, "vector_score": 0.0, "data": row})
             merged[cid]["vector_score"] = row["score"]
 
-        # Compute weighted scores
         total_weight = self.vector_weight + self.text_weight
         results = []
-        for cid, entry in merged.items():
+        for entry in merged.values():
             score = (
                 (self.vector_weight / total_weight) * entry["vector_score"]
                 + (self.text_weight / total_weight) * entry["text_score"]
             )
-            if score >= min_score:
+            if score >= threshold:
                 results.append(self._row_to_result(entry["data"], score, snippet_length=300))
 
-        # Sort by score descending, take top N
         results.sort(key=lambda r: r.score, reverse=True)
-        return results[:max_results]
+        results = results[:n]
+        return self._mmr_rerank_results(results, lambda_param=mmr_lambda)
 
-    def _search_vector(self, query_embedding: List[float], limit: int = 10) -> List[Dict]:
-        """Search using cosine similarity against stored embeddings."""
-        import math
-
-        all_chunks = self.store.get_all_chunks_for_vector()
-        if not all_chunks or not query_embedding:
-            return []
-
-        scored = []
-        query_norm = math.sqrt(sum(x * x for x in query_embedding)) or 1.0
-
-        for chunk in all_chunks:
-            emb_str = chunk.get("embedding")
-            if not emb_str:
-                continue
-            try:
-                embedding = json.loads(emb_str) if isinstance(emb_str, str) else emb_str
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-            # Cosine similarity
-            dot_product = sum(a * b for a, b in zip(query_embedding, embedding))
-            emb_norm = math.sqrt(sum(x * x for x in embedding)) or 1.0
-            similarity = dot_product / (query_norm * emb_norm)
-
-            scored.append({
-                "chunk_id": chunk["id"],
-                "path": chunk["path"],
-                "source": chunk.get("source", ""),
-                "start_line": chunk.get("start_line", 0),
-                "end_line": chunk.get("end_line", 0),
-                "text": chunk["text"],
-                "score": similarity,
-                "snippet": chunk["text"][:200],
-            })
-
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:limit]
-
-    def _mmr_rerank(self, query_embedding: List[float], results: List[Dict], lambda_param: float = 0.7) -> List[Dict]:
-        """Maximal Marginal Relevance reranking for diversity."""
-        import math
-
-        if not results or len(results) <= 1:
+    def _mmr_rerank_results(
+        self,
+        results: List[MemorySearchResult],
+        lambda_param: float = 0.7,
+    ) -> List[MemorySearchResult]:
+        """MMR reranking using Jaccard text similarity for diversity (#24)."""
+        if len(results) <= 1:
             return results
 
-        query_norm = math.sqrt(sum(x * x for x in query_embedding)) or 1.0
+        def jaccard(a: str, b: str) -> float:
+            w1 = set(a.lower().split())
+            w2 = set(b.lower().split())
+            if not w1 or not w2:
+                return 0.0
+            return len(w1 & w2) / len(w1 | w2)
 
-        def similarity(a: List[float], b: List[float]) -> float:
-            dot = sum(x * y for x, y in zip(a, b))
-            norm_a = math.sqrt(sum(x * x for x in a)) or 1.0
-            norm_b = math.sqrt(sum(x * x for x in b)) or 1.0
-            return dot / (norm_a * norm_b)
-
-        # Get all embeddings for selected results
-        selected = []
+        selected: List[MemorySearchResult] = []
         remaining = list(results)
-
-        # Select first (most relevant)
         selected.append(remaining.pop(0))
 
-        while remaining and len(selected) < len(results):
-            best_score = -1
+        while remaining:
+            best_score = -1.0
             best_idx = 0
-
             for i, candidate in enumerate(remaining):
-                # Relevance to query
-                rel_score = candidate["score"]
-
-                # Max similarity to already selected
-                max_sim = 0
-                for sel in selected:
-                    # Use cosine similarity on text as proxy (we don't have embeddings stored per result here)
-                    # Use score-based proxy
-                    sim = candidate["score"] * sel["score"]  # Simple proxy
-                    max_sim = max(max_sim, sim)
-
-                mmr_score = lambda_param * rel_score - (1 - lambda_param) * max_sim
-                if mmr_score > best_score:
-                    best_score = mmr_score
+                relevance = candidate.score
+                max_sim = max(
+                    (jaccard(candidate.snippet, sel.snippet) for sel in selected),
+                    default=0.0,
+                )
+                mmr = lambda_param * relevance - (1 - lambda_param) * max_sim
+                if mmr > best_score:
+                    best_score = mmr
                     best_idx = i
-
             selected.append(remaining.pop(best_idx))
 
         return selected
-
-    def _apply_temporal_decay(self, results: List[Dict], half_life_hours: float = 168) -> List[Dict]:
-        """Apply exponential time decay to scores."""
-        import time
-
-        now = time.time()
-        half_life_seconds = half_life_hours * 3600
-
-        for r in results:
-            indexed_at = r.get("indexed_at", now)
-            if isinstance(indexed_at, (int, float)):
-                age_seconds = now - indexed_at
-                decay = 0.5 ** (age_seconds / half_life_seconds)
-                r["original_score"] = r["score"]
-                r["score"] = r["score"] * decay
-
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results
 
     def _row_to_result(
         self, row: dict, score: Optional[float] = None, snippet_length: int = 300
@@ -480,7 +428,7 @@ class MemorySearchTool(Tool):
             )
 
         try:
-            results = self.manager.search(query, max_results=max_results, min_score=min_score)
+            results = await self.manager.search(query, max_results=max_results, min_score=min_score)
             if not results:
                 return ToolResult(
                     success=True,
@@ -557,7 +505,6 @@ class MemoryGetTool(Tool):
                     error=f"Memory file not found or access denied: {path}",
                 )
 
-            # Extract requested lines
             all_lines = content.split("\n")
             start = max(1, from_line)
             end = start + lines
@@ -571,3 +518,133 @@ class MemoryGetTool(Tool):
             )
         except Exception as e:
             return ToolResult(success=False, output="", error=str(e))
+
+
+class MemoryStoreTool(Tool):
+    """memory_store tool: lets the Agent proactively save information to memory (#25)."""
+
+    def __init__(self, manager: "MemorySearchManager"):
+        super().__init__(
+            name="memory_store",
+            description=(
+                "Store important information into memory for future recall. "
+                "Use this to remember decisions, preferences, facts, or anything "
+                "that might be relevant in future conversations. "
+                "The information will be searchable via memory_search."
+            ),
+        )
+        self.manager = manager
+
+    def _get_parameters_schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "The information to store. Be specific and include context.",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["preference", "decision", "fact", "entity", "other"],
+                    "description": "Category of this memory (default: other)",
+                },
+                "importance": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Importance score 0-1 (default: 0.5)",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Optional path within memory/ (e.g., 'memory/preferences.md')",
+                },
+            },
+            "required": ["text"],
+        }
+
+    async def execute(self, params: Dict[str, Any]) -> ToolResult:
+        text = params.get("text", "")
+        category = params.get("category", "other")
+        importance = float(params.get("importance", 0.5))
+        rel_path = params.get("path")
+
+        if not text:
+            return ToolResult(success=False, output="", error="Missing required parameter: text")
+
+        try:
+            stored_path = await self._store_memory(text, category, importance, rel_path)
+            await self.manager.sync()
+            return ToolResult(
+                success=True,
+                output=f"Memory stored at {stored_path}",
+                metadata={"path": stored_path, "category": category},
+            )
+        except Exception as e:
+            return ToolResult(success=False, output="", error=str(e))
+
+    async def _store_memory(
+        self,
+        text: str,
+        category: str,
+        importance: float,
+        rel_path: Optional[str],
+    ) -> str:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if rel_path:
+            target = self.manager.workspace_dir / rel_path
+        else:
+            target = self.manager.workspace_dir / "memory" / f"{category}.md"
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        entry = f"\n## {timestamp} (importance: {importance:.1f})\n\n{text}\n"
+        with open(target, "a", encoding="utf-8") as f:
+            f.write(entry)
+
+        return str(target.relative_to(self.manager.workspace_dir))
+
+
+# ---------------------------------------------------------------------------
+# DailyNotesLoader (#25)
+# ---------------------------------------------------------------------------
+
+class DailyNotesLoader:
+    """Automatically loads today's and yesterday's daily notes into memory sync."""
+
+    DAILY_NOTES_DIR = "memory"
+    DATE_FORMAT = "%Y-%m-%d"
+
+    @staticmethod
+    def get_daily_note_paths(workspace_dir: Path) -> List[Path]:
+        """Return paths for today's and yesterday's daily notes if they exist."""
+        from datetime import timedelta
+
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        paths = []
+        for d in (today, yesterday):
+            fname = workspace_dir / DailyNotesLoader.DAILY_NOTES_DIR / f"{d.strftime(DailyNotesLoader.DATE_FORMAT)}.md"
+            if fname.is_file():
+                paths.append(fname)
+        return paths
+
+    @staticmethod
+    def list_memory_files_with_daily(
+        workspace_dir: Path,
+        extra_paths: Optional[List[str]] = None,
+    ) -> List[Path]:
+        """Extend list_memory_files to prioritize today/yesterday daily notes."""
+        daily = DailyNotesLoader.get_daily_note_paths(workspace_dir)
+        regular = list_memory_files(workspace_dir, extra_paths)
+
+        # Daily notes first, then the rest (dedup by resolved path)
+        seen = set()
+        result = []
+        for p in daily + regular:
+            key = str(p.resolve())
+            if key not in seen:
+                seen.add(key)
+                result.append(p)
+        return result

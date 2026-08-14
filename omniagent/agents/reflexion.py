@@ -31,7 +31,7 @@ from .context_manager import (
 )
 from .context_assembler import ContextAssembler, estimate_tokens
 from .memory_manager import (
-    MemorySearchManager, MemorySearchTool, MemoryGetTool,
+    MemorySearchManager, MemorySearchTool, MemoryGetTool, MemoryStoreTool,
 )
 from .skills import SkillManager
 from .events import EventBus, EventType, AgentEvent
@@ -95,11 +95,14 @@ class ReflexionAgent(Agent):
             # Sync resolved model back to config so system prompt uses it
             config.agent.model_id = provider_model
 
+            provider_wire_api = getattr(provider_cfg, "wire_api", "chat") if provider_cfg else "chat"
+
             llm_provider = create_llm_provider(
                 provider=provider_name,
                 api_key=provider_api_key,
                 model=provider_model,
                 api_url=provider_api_url,
+                wire_api=provider_wire_api,
             )
 
         self.llm = llm_provider
@@ -200,6 +203,23 @@ class ReflexionAgent(Agent):
             # Register memory tools
             self.register_tool(MemorySearchTool(self.memory_manager))
             self.register_tool(MemoryGetTool(self.memory_manager))
+            self.register_tool(MemoryStoreTool(self.memory_manager))
+
+        # Initialize Active Memory Agent (#21)
+        self._active_memory = None
+        if config.memory.enabled:
+            try:
+                from .active_memory import ActiveMemoryAgent, ActiveMemoryConfig
+                am_config = ActiveMemoryConfig(
+                    enabled=getattr(config.memory, "active_memory_enabled", True),
+                )
+                self._active_memory = ActiveMemoryAgent(
+                    memory_manager=self.memory_manager,
+                    llm_provider=self.llm,
+                    config=am_config,
+                )
+            except Exception as e:
+                logger.warning("active_memory_init_failed", error=str(e))
 
         # Initialize skills system
         self.skill_manager = SkillManager(work_dir=self.work_dir)
@@ -551,8 +571,27 @@ class ReflexionAgent(Agent):
             except Exception as e:
                 logger.warning("memory_sync_failed", error=str(e))
 
+        # Active Memory: inject relevant context before main reply (#21)
+        active_memory_context: Optional[str] = None
+        if self._active_memory:
+            try:
+                active_memory_context = await self._active_memory.run(
+                    message_text=message.content,
+                    session_id=message.session_id,
+                    session_kind="interactive",
+                )
+            except Exception as e:
+                logger.warning("active_memory_run_failed", error=str(e))
+
+        task_content = message.content
+        if active_memory_context:
+            task_content = (
+                f"[Relevant Memory Context]\n{active_memory_context}\n\n"
+                f"[User Message]\n{message.content}"
+            )
+
         # Execute task
-        result = await self.execute(message.content)
+        result = await self.execute(task_content)
 
         # Create response
         return OutgoingMessage(
@@ -1947,7 +1986,7 @@ Do NOT write code or tool calls. Only provide the reflection."""
         # Capture memory search results for L0 hints injection
         if tool_name == "memory_search" and self.memory_manager:
             try:
-                raw_results = self.memory_manager.search(
+                raw_results = await self.memory_manager.search(
                     query=params.get("query", ""),
                     max_results=params.get("max_results", 6),
                 )

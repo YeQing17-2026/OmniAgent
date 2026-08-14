@@ -46,6 +46,10 @@ class ProviderConfig(BaseModel):
         default=None,
         description="Default model ID for this provider"
     )
+    wire_api: Literal["chat", "responses"] = Field(
+        default="chat",
+        description="API wire format: 'chat' for /v1/chat/completions, 'responses' for /v1/responses"
+    )
 
 
 class AgentConfig(BaseModel):

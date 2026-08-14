@@ -35,6 +35,8 @@ dependencies = [
 
 [project.optional-dependencies]
 feishu = ["lark-oapi>=1.5.0"]
+vector = ["sqlite-vec>=0.1.0"]
+local-embed = ["sentence-transformers>=2.2.0"]
 dev = [
     "pytest>=7.4.3",
     "pytest-asyncio>=0.21.1",
@@ -53,6 +55,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["omniagent*"]
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
 [tool.black]
 line-length = 100
 target-version = ['py311']
@@ -66,3 +72,9 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=0.26.0",
+]
