@@ -125,6 +125,7 @@ async def update_config(request: web.Request) -> web.Response:
     ctx.config = new_config
     if ctx.agent is not None:
         ctx.agent.config = new_config
+        ctx.agent.llm = ctx.agent._create_llm_from_config(new_config)
 
     result = new_config.model_dump(mode="json")
     _mask_sensitive_fields(result)
@@ -145,6 +146,7 @@ async def reload_config_handler(request: web.Request) -> web.Response:
     ctx.config = reloaded
     if ctx.agent is not None:
         ctx.agent.config = reloaded
+        ctx.agent.llm = ctx.agent._create_llm_from_config(reloaded)
 
     return web.json_response({"status": "reloaded"})
 
