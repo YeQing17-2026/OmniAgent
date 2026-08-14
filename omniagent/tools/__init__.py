@@ -5,6 +5,7 @@ from .file_tools import ReadTool, WriteTool, EditTool
 from .bash_tool import BashTool
 from .json_tool import LoadJSONTool, SaveJSONTool
 from .web_tools import WebSearchTool, WebFetchTool
+from .exa_tool import ExaSearchTool
 from .process_tool import ProcessListTool, ProcessKillTool
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "SaveJSONTool",
     "WebSearchTool",
     "WebFetchTool",
+    "ExaSearchTool",
     "ProcessListTool",
     "ProcessKillTool",
 ]
