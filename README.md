@@ -164,7 +164,7 @@ agent:
 ┌──────────────────────▼───────────────────────────────┐
 │  LLM Providers                                       │
 │  DeepSeek · OpenAI · Anthropic · Ollama · Gemini     │
-│  OpenRouter · vLLM · SGLang · Custom                 │
+│  OpenRouter · OrcaRouter · vLLM · SGLang · Custom     │
 └──────────────────────────────────────────────────────┘
 ```
 

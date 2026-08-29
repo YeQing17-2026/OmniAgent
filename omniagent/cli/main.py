@@ -169,6 +169,7 @@ def onboard(ctx: click.Context) -> None:
         ("ollama", "Ollama (e.g., llama3)"),
         ("gemini", "Google Gemini (e.g., gemini-2.0-flash)"),
         ("openrouter", "OpenRouter (e.g., openai/gpt-4o)"),
+        ("orcarouter", "OrcaRouter (e.g., anthropic/claude-sonnet-4.5)"),
         ("custom", "Custom OpenAI-compatible endpoint"),
     ]
 
@@ -208,6 +209,7 @@ def onboard(ctx: click.Context) -> None:
         "ollama": None,
         "gemini": "GOOGLE_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",
+        "orcarouter": "ORCAROUTER_API_KEY",
         "custom": None,
     }
     env_var = env_var_map.get(selected_provider)
@@ -231,6 +233,7 @@ def onboard(ctx: click.Context) -> None:
         "ollama": "llama3",
         "gemini": "gemini-2.0-flash",
         "openrouter": "openai/gpt-4o",
+        "orcarouter": "anthropic/claude-sonnet-4.5",
     }
 
     if selected_provider == "custom":
