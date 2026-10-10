@@ -127,6 +127,28 @@ agent:
 
 > 完整配置参考：[docs.omniagent.dev](https://docs.omniagent.dev) *(即将上线)*
 
+### 可选的免密钥网页搜索
+
+在仓库目录安装 Parallel 可选依赖：
+
+```bash
+pip install -e ".[parallel]"
+```
+
+在 `~/.omniagent/config.yaml` 中设置：
+
+```yaml
+tools:
+  web_search_provider: parallel
+```
+
+现有 `web_search` 工具通过 Streamable HTTP 连接
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+（`https://search.parallel.ai/mcp`），返回标题、URL 和相关摘录，无需 Parallel
+账户或 API 密钥。匿名搜索使用 Fast 模式，并有速率限制。`max_results` 仅限制
+显示的结果数量（1–10），不会改变服务端搜索规模。默认仍为 Brave；设置
+`web_search_provider: brave` 即可切回。`web_fetch` 的行为保持不变。
+
 ---
 
 ## 架构与项目结构

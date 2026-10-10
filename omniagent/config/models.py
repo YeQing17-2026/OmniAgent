@@ -11,6 +11,11 @@ class ToolsConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    web_search_provider: Literal["brave", "parallel"] = Field(
+        default="brave",
+        description="Web search provider (Parallel uses anonymous Search MCP)"
+    )
+
     profile: Literal["minimal", "coding", "messaging", "full"] = Field(
         default="coding",
         description="Tool profile preset"

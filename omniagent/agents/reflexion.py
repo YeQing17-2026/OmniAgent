@@ -17,6 +17,7 @@ from omniagent.tools import (
     LoadJSONTool, SaveJSONTool, ProcessListTool, ProcessKillTool,
     WebSearchTool, WebFetchTool,
 )
+from omniagent.tools.parallel_search import ParallelSearchTool
 from omniagent.tools.grep_tool import GrepTool
 from omniagent.tools.find_tool import FindTool
 from omniagent.tools.ls_tool import LsTool
@@ -346,7 +347,10 @@ class ReflexionAgent(Agent):
         self.registry.register(ProcessKillTool())
 
         # Web tools
-        self.registry.register(WebSearchTool())
+        if self.config.tools.web_search_provider == "parallel":
+            self.registry.register(ParallelSearchTool(model_name=self.config.agent.model_id))
+        else:
+            self.registry.register(WebSearchTool())
         self.registry.register(WebFetchTool())
 
         # Search/navigation tools

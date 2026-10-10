@@ -124,6 +124,28 @@ agent:
 
 > Full configuration reference: [docs.omniagent.dev](https://docs.omniagent.dev) *(coming soon)*
 
+### Optional keyless web search
+
+Install the Parallel extra from your checkout:
+
+```bash
+pip install -e ".[parallel]"
+```
+
+Set the provider in `~/.omniagent/config.yaml`:
+
+```yaml
+tools:
+  web_search_provider: parallel
+```
+
+The existing `web_search` tool now uses [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+at `https://search.parallel.ai/mcp` over Streamable HTTP. It returns titles, URLs,
+and relevant excerpts without a Parallel account or API key. Anonymous searches
+use Fast mode and are rate limited. `max_results` limits the displayed results
+(1–10), not the server's search size. Brave remains the default; set
+`web_search_provider: brave` to switch back. `web_fetch` keeps its existing behavior.
+
 ---
 
 ## Architecture & Project Structure
