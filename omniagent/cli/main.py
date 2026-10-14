@@ -165,6 +165,7 @@ def onboard(ctx: click.Context) -> None:
     providers = [
         ("deepseek", "DeepSeek (e.g., deepseek-chat)"),
         ("openai", "OpenAI (e.g., gpt-4o)"),
+        ("cheaperinference", "Cheaper Inference (e.g., gpt-5.4-mini)"),
         ("anthropic", "Anthropic (e.g., claude-sonnet-4-20250514)"),
         ("ollama", "Ollama (e.g., llama3)"),
         ("gemini", "Google Gemini (e.g., gemini-2.0-flash)"),
@@ -204,6 +205,7 @@ def onboard(ctx: click.Context) -> None:
     env_var_map = {
         "deepseek": "DEEPSEEK_API_KEY",
         "openai": "OPENAI_API_KEY",
+        "cheaperinference": "CHEAPERINFERENCE_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "ollama": None,
         "gemini": "GOOGLE_API_KEY",
@@ -227,6 +229,7 @@ def onboard(ctx: click.Context) -> None:
     default_models = {
         "deepseek": "deepseek-chat",
         "openai": "gpt-4o",
+        "cheaperinference": "gpt-5.4-mini",
         "anthropic": "claude-sonnet-4-20250514",
         "ollama": "llama3",
         "gemini": "gemini-2.0-flash",
