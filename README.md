@@ -122,6 +122,42 @@ agent:
   reflexion_enabled: true
 ```
 
+### MiniMax
+
+Use `minimax` for the OpenAI-compatible API or `minimax-anthropic` for the
+Anthropic-compatible API. Both provider values default to `MiniMax-M3.1-Flash`,
+with `MiniMax-M3` as the other current model. Explicit saved or custom model IDs
+remain supported, including legacy IDs.
+
+| Protocol | Provider value | Global API URL | China API URL |
+|----------|----------------|----------------|---------------|
+| OpenAI-compatible | `minimax` | `https://api.minimax.io/v1` | `https://api.minimaxi.com/v1` |
+| Anthropic-compatible | `minimax-anthropic` | `https://api.minimax.io/anthropic` | `https://api.minimaxi.com/anthropic` |
+
+Keep Anthropic-compatible API URLs ending in `/anthropic`; the SDK appends
+`/v1/messages` when it sends a request.
+
+```yaml
+providers:
+  minimax-anthropic:
+    api_key: "${MINIMAX_API_KEY}"
+    api_url: https://api.minimax.io/anthropic
+    model_id: MiniMax-M3.1-Flash
+
+agent:
+  model_provider: minimax-anthropic
+  context_window_size: 0
+```
+
+The following model details are official API metadata. OmniAgent uses the context
+values when `context_window_size` is `0`; its current interactive message input
+remains text-only.
+
+| Model ID | Context window | Official API input modalities | Official API thinking modes |
+|----------|----------------|-------------------------------|-----------------------------|
+| `MiniMax-M3.1-Flash` | 1,000,000 | Text, image, video | Adaptive only |
+| `MiniMax-M3` | 1,000,000 | Text, image, video | Adaptive or disabled |
+
 > Full configuration reference: [docs.omniagent.dev](https://docs.omniagent.dev) *(coming soon)*
 
 ---

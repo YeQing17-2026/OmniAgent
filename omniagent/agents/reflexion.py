@@ -900,8 +900,10 @@ class ReflexionAgent(Agent):
                         # Add assistant message with tool_calls so the conversation makes sense
                         assistant_msg = LLMMessage(
                             role="assistant",
-                            content=content if content else None,
+                            content=content if content else "",
                             tool_calls=response.tool_calls,
+                            reasoning_content=response.reasoning_content,
+                            content_blocks=response.content_blocks,
                             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         )
                         messages.append(assistant_msg)
@@ -935,6 +937,8 @@ class ReflexionAgent(Agent):
                             role="assistant",
                             content=content if content else "",
                             tool_calls=response.tool_calls,
+                            reasoning_content=response.reasoning_content,
+                            content_blocks=response.content_blocks,
                             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         )
                         messages.append(assistant_msg)
@@ -965,7 +969,12 @@ class ReflexionAgent(Agent):
 
                 # No tool calls found, this is the final response
                 self.conversation_history.append(
-                    LLMMessage(role="assistant", content=content, timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    LLMMessage(
+                        role="assistant", content=content,
+                        reasoning_content=response.reasoning_content,
+                        content_blocks=response.content_blocks,
+                        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
                 )
                 logger.info("task_completed", iterations=iteration + 1)
 

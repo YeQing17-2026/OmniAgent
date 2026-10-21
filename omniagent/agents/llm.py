@@ -32,6 +32,8 @@ class LLMMessage:
     tool_call_id: Optional[str] = None  # For role="tool" messages
     name: Optional[str] = None  # Tool name for tool messages
     timestamp: Optional[str] = None  # ISO format timestamp for user/assistant messages
+    reasoning_content: Optional[str] = None  # OpenAI-compatible reasoning history
+    content_blocks: Optional[List[Dict[str, Any]]] = None  # Ordered Anthropic blocks
 
 
 @dataclass
@@ -44,6 +46,8 @@ class LLMResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
     tool_calls: Optional[List[Dict]] = None  # OpenAI-style tool_calls
     logprobs: Optional[List[Dict[str, Any]]] = None  # Per-token logprobs (vLLM/SGLang)
+    reasoning_content: Optional[str] = None
+    content_blocks: Optional[List[Dict[str, Any]]] = None
 
 
 class LLMProvider(ABC):
@@ -438,6 +442,8 @@ class OpenAILLMProvider(LLMProvider):
 
             if msg.tool_calls:
                 m["tool_calls"] = msg.tool_calls
+            if msg.role == "assistant" and msg.reasoning_content is not None:
+                m["reasoning_content"] = msg.reasoning_content
 
             result.append(m)
         return result
@@ -513,6 +519,7 @@ class OpenAILLMProvider(LLMProvider):
                 finish_reason=choice.finish_reason,
                 usage=usage,
                 tool_calls=tool_calls,
+                reasoning_content=getattr(choice.message, "reasoning_content", None),
                 metadata={"model": self.model, "provider": "openai"},
             )
         finally:
@@ -610,6 +617,12 @@ class AnthropicLLMProvider(LLMProvider):
                 continue
 
             if msg.role == "assistant":
+                if msg.content_blocks is not None:
+                    # Signed thinking and opaque blocks must retain their original order.
+                    anthropic_messages.append({
+                        "role": "assistant", "content": msg.content_blocks,
+                    })
+                    continue
                 content_blocks: List[Dict] = []
 
                 # Add text content if present
@@ -739,6 +752,10 @@ class AnthropicLLMProvider(LLMProvider):
                 finish_reason=response.stop_reason,
                 usage=usage,
                 tool_calls=tool_calls,
+                content_blocks=[
+                    block.model_dump(mode="json", exclude_unset=True)
+                    for block in response.content
+                ],
                 metadata={"model": self.model, "provider": "anthropic"},
             )
         finally:
@@ -989,6 +1006,42 @@ class OpenRouterLLMProvider(OpenAILLMProvider):
         logger.info("openrouter_llm_initialized", model=model, base_url=self.base_url)
 
 
+class MiniMaxLLMProvider(OpenAILLMProvider):
+    """MiniMax LLM provider using the OpenAI-compatible API."""
+
+    DEFAULT_BASE_URL = "https://api.minimax.io/v1"
+    DEFAULT_MODEL = "MiniMax-M3.1-Flash"
+    SUPPORTED_MODELS = ("MiniMax-M3.1-Flash", "MiniMax-M3")
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = DEFAULT_MODEL,
+        api_url: Optional[str] = None,
+    ):
+        base_url = api_url or self.DEFAULT_BASE_URL
+        super().__init__(api_key=api_key, model=model, api_url=base_url)
+        logger.info("minimax_llm_initialized", model=model, base_url=self.base_url)
+
+
+class MiniMaxAnthropicLLMProvider(AnthropicLLMProvider):
+    """MiniMax LLM provider using the Anthropic-compatible API."""
+
+    DEFAULT_BASE_URL = "https://api.minimax.io/anthropic"
+    DEFAULT_MODEL = MiniMaxLLMProvider.DEFAULT_MODEL
+    SUPPORTED_MODELS = MiniMaxLLMProvider.SUPPORTED_MODELS
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = DEFAULT_MODEL,
+        api_url: Optional[str] = None,
+    ):
+        base_url = api_url or self.DEFAULT_BASE_URL
+        super().__init__(api_key=api_key, model=model, api_url=base_url)
+        logger.info("minimax_anthropic_llm_initialized", model=model, base_url=base_url)
+
+
 class LocalInferenceLLMProvider(OpenAILLMProvider):
     """Local inference provider (vLLM/SGLang) with logprobs support for RL.
 
@@ -1130,6 +1183,18 @@ def create_llm_provider(
         return GoogleGeminiLLMProvider(api_key=api_key, model=model or "gemini-2.0-flash", api_url=api_url)
     elif provider == "openrouter":
         return OpenRouterLLMProvider(api_key=api_key, model=model or "openai/gpt-4o", api_url=api_url)
+    elif provider == "minimax":
+        return MiniMaxLLMProvider(
+            api_key=api_key,
+            model=model or MiniMaxLLMProvider.DEFAULT_MODEL,
+            api_url=api_url,
+        )
+    elif provider == "minimax-anthropic":
+        return MiniMaxAnthropicLLMProvider(
+            api_key=api_key,
+            model=model or MiniMaxAnthropicLLMProvider.DEFAULT_MODEL,
+            api_url=api_url,
+        )
     elif provider in ("vllm", "sglang"):
         default_url = "http://localhost:8000/v1" if provider == "vllm" else "http://localhost:30000/v1"
         return LocalInferenceLLMProvider(

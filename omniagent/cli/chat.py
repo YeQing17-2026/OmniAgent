@@ -365,6 +365,12 @@ class ChatSession:
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,
+                metadata={
+                    key: value for key, value in {
+                        "reasoning_content": msg.reasoning_content,
+                        "content_blocks": msg.content_blocks,
+                    }.items() if value is not None
+                },
             )
         self.session_manager._save_session(session)
 
@@ -415,6 +421,8 @@ class ChatSession:
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,
+                reasoning_content=msg.metadata.get("reasoning_content"),
+                content_blocks=msg.metadata.get("content_blocks"),
                 timestamp=msg.timestamp.isoformat(),
             )
             for msg in session.history

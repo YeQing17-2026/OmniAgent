@@ -3,7 +3,7 @@
 import os
 from typing import Any, Dict, List, Literal, Optional
 from pathlib import Path
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ToolsConfig(BaseModel):
@@ -53,9 +53,18 @@ class AgentConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    model_provider: Literal["deepseek", "openai", "anthropic", "ollama", "gemini", "openrouter", "vllm", "sglang", "custom"] = Field(
+    @model_validator(mode="before")
+    @classmethod
+    def default_minimax_model(cls, data: Any) -> Any:
+        """Default new MiniMax configurations without replacing saved model IDs."""
+        if isinstance(data, dict) and "model_id" not in data:
+            if data.get("model_provider") in ("minimax", "minimax-anthropic"):
+                return {**data, "model_id": "MiniMax-M3.1-Flash"}
+        return data
+
+    model_provider: Literal["deepseek", "openai", "anthropic", "minimax", "minimax-anthropic", "ollama", "gemini", "openrouter", "vllm", "sglang", "custom"] = Field(
         default="deepseek",
-        description="LLM provider (deepseek, openai, anthropic, ollama, gemini, openrouter, vllm, sglang, custom)"
+        description="LLM provider (deepseek, openai, anthropic, minimax, minimax-anthropic, ollama, gemini, openrouter, vllm, sglang, custom)"
     )
     model_id: str = Field(
         default="deepseek-chat",

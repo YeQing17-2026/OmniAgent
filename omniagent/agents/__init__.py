@@ -6,7 +6,7 @@ from .llm import (
     LLMProvider, LLMMessage, LLMResponse,
     DeepSeekLLMProvider, OpenAILLMProvider, AnthropicLLMProvider,
     OllamaLLMProvider, GoogleGeminiLLMProvider, OpenRouterLLMProvider,
-    LocalInferenceLLMProvider,
+    MiniMaxLLMProvider, MiniMaxAnthropicLLMProvider, LocalInferenceLLMProvider,
     create_llm_provider,
 )
 from .context_manager import ContextManager
@@ -34,6 +34,8 @@ __all__ = [
     "OllamaLLMProvider",
     "GoogleGeminiLLMProvider",
     "OpenRouterLLMProvider",
+    "MiniMaxLLMProvider",
+    "MiniMaxAnthropicLLMProvider",
     "LocalInferenceLLMProvider",
     "create_llm_provider",
     "ContextManager",
