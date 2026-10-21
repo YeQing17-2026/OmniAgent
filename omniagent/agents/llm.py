@@ -993,8 +993,8 @@ class MiniMaxLLMProvider(OpenAILLMProvider):
     """MiniMax LLM provider using the OpenAI-compatible API."""
 
     DEFAULT_BASE_URL = "https://api.minimax.io/v1"
-    DEFAULT_MODEL = "MiniMax-M3"
-    SUPPORTED_MODELS = ("MiniMax-M3", "MiniMax-M2.7")
+    DEFAULT_MODEL = "MiniMax-M3.1-Flash"
+    SUPPORTED_MODELS = ("MiniMax-M3.1-Flash", "MiniMax-M3")
 
     def __init__(
         self,
