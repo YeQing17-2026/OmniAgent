@@ -32,6 +32,8 @@ class LLMMessage:
     tool_call_id: Optional[str] = None  # For role="tool" messages
     name: Optional[str] = None  # Tool name for tool messages
     timestamp: Optional[str] = None  # ISO format timestamp for user/assistant messages
+    reasoning_content: Optional[str] = None  # OpenAI-compatible reasoning history
+    content_blocks: Optional[List[Dict[str, Any]]] = None  # Ordered Anthropic blocks
 
 
 @dataclass
@@ -44,6 +46,8 @@ class LLMResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
     tool_calls: Optional[List[Dict]] = None  # OpenAI-style tool_calls
     logprobs: Optional[List[Dict[str, Any]]] = None  # Per-token logprobs (vLLM/SGLang)
+    reasoning_content: Optional[str] = None
+    content_blocks: Optional[List[Dict[str, Any]]] = None
 
 
 class LLMProvider(ABC):
@@ -438,6 +442,8 @@ class OpenAILLMProvider(LLMProvider):
 
             if msg.tool_calls:
                 m["tool_calls"] = msg.tool_calls
+            if msg.role == "assistant" and msg.reasoning_content is not None:
+                m["reasoning_content"] = msg.reasoning_content
 
             result.append(m)
         return result
@@ -513,6 +519,7 @@ class OpenAILLMProvider(LLMProvider):
                 finish_reason=choice.finish_reason,
                 usage=usage,
                 tool_calls=tool_calls,
+                reasoning_content=getattr(choice.message, "reasoning_content", None),
                 metadata={"model": self.model, "provider": "openai"},
             )
         finally:
@@ -610,6 +617,12 @@ class AnthropicLLMProvider(LLMProvider):
                 continue
 
             if msg.role == "assistant":
+                if msg.content_blocks is not None:
+                    # Signed thinking and opaque blocks must retain their original order.
+                    anthropic_messages.append({
+                        "role": "assistant", "content": msg.content_blocks,
+                    })
+                    continue
                 content_blocks: List[Dict] = []
 
                 # Add text content if present
@@ -739,6 +752,10 @@ class AnthropicLLMProvider(LLMProvider):
                 finish_reason=response.stop_reason,
                 usage=usage,
                 tool_calls=tool_calls,
+                content_blocks=[
+                    block.model_dump(mode="json", exclude_unset=True)
+                    for block in response.content
+                ],
                 metadata={"model": self.model, "provider": "anthropic"},
             )
         finally:
