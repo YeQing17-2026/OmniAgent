@@ -1398,6 +1398,11 @@ Citations: include Source: <path#line> when it helps the user verify memory snip
             r'\bsource\b', r'\bdot\b', r'\bwget\b', r'\bcurl\b',
             r'\bpython\b', r'\bnode\b', r'\bnpm\b', r'\bpip\b',
             r'\bgit\s+(push|reset|clean|checkout\b(?!\s--))',
+            # find execution primaries run an arbitrary command per match;
+            # the glued spellings (-execdir/-okdir) evade r'\bexec\b' because
+            # there is no word boundary between 'exec' and 'dir', and the
+            # payload binary is never allowlist/denylist-checked.
+            r'-(?:execdir|okdir|exec|ok)\b',
             r'>\s*(?!/dev/null)',  # redirect to file (not /dev/null)
             r'\$\(',  # command substitution
         ]
